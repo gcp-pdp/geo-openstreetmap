@@ -3,6 +3,9 @@ import os
 import logging
 import datetime
 import json
+import base64
+import binascii
+import time
 
 import googleapiclient.discovery
 
@@ -14,8 +17,10 @@ YESTERDAY = datetime.datetime.combine(
     datetime.datetime.today() - datetime.timedelta(1),
     datetime.datetime.min.time())
 
-OSM_TRANSFER_INDEX_FILE_NAME = "osm_transfer_index.tsv"
-OSM_TRANSFER_INDEX_GCS_NAME = "gsc_transfer_index/"+OSM_TRANSFER_INDEX_FILE_NAME
+OSM_TRANSFER_INDEX_FILE_NAME_BASE = "osm_transfer_index"
+OSM_TRANSFER_INDEX_FILE_NAME_EXT = ".tsv"
+OSM_TRANSFER_INDEX_FILE_NAME = OSM_TRANSFER_INDEX_FILE_NAME_BASE + OSM_TRANSFER_INDEX_FILE_NAME_EXT
+OSM_TRANSFER_INDEX_GCS_NAME_DIR = "gsc_transfer_index/"
 
 
 project_id = os.environ.get('PROJECT_ID')
@@ -40,8 +45,12 @@ with airflow.DAG(
         logging.info([osm_url, osm_md5_url, gcs_data_bucket])
 
         md5_file_lines = read_file_lines_from_url(osm_md5_url)
-        md5_hash = get_md5_hash_from_md5_file_lines(md5_file_lines)
-        logging.info(md5_hash)
+        logging.info(md5_file_lines)
+
+        md5_hex = get_md5_hash_from_md5_file_lines(md5_file_lines)
+        logging.info(md5_hex)
+
+        base64_md5_file_hash = md5_hex_to_base64(md5_hex)
 
         content_length = get_content_length_from_url(osm_url)
         logging.info(content_length)
@@ -49,15 +58,18 @@ with airflow.DAG(
         osm_transfer_index_file_name = create_transfer_index_tsv(OSM_TRANSFER_INDEX_FILE_NAME,
                                                                  osm_url,
                                                                  content_length,
-                                                                 md5_hash)
+                                                                 base64_md5_file_hash)
         list_url = upload_file_to_gcs_as_public(osm_transfer_index_file_name,
                                                 gcs_data_bucket,
-                                                OSM_TRANSFER_INDEX_GCS_NAME)
+                                                OSM_TRANSFER_INDEX_GCS_NAME_DIR)
 
         job_dict = create_transfer_job_dict(project_id, list_url, gcs_transfer_bucket)
         execute_transfer_job(job_dict)
 
     def read_file_lines_from_url(url):
+        logging.info(url)
+
+        request.urlcleanup()
         data = request.urlopen(url)
         return [byte_str_to_str(line) for line in data]
 
@@ -73,17 +85,29 @@ with airflow.DAG(
         meta = data.info()
         return meta.get(name="Content-Length")
 
+    def md5_hex_to_base64(md5_hex):
+        return byte_str_to_str(to_base64(from_hex_to_binary(md5_hex)))
+
+    def from_hex_to_binary(hex):
+        return binascii.unhexlify(hex)
+
+    def to_base64(byte_str):
+        return base64.b64encode(byte_str)
+
     def create_transfer_index_tsv(osm_transfer_index_file_name, url, content_length, md5_hash):
         header_line = "TsvHttpData-1.0"
-        lines = [header_line + "\n", "\t".join([url, content_length, md5_hash])]
-
+        lines = [header_line, "\t".join([url, content_length, md5_hash])]
+        lines = [line+"\n" for line in lines]
         with open(osm_transfer_index_file_name, "w") as osm_transfer_index_file:
             osm_transfer_index_file.writelines(lines)
         return osm_transfer_index_file_name
 
-    def upload_file_to_gcs_as_public(osm_transfer_index_file_name, gcs_data_bucket, osm_transfer_index_gcs_name):
+    def upload_file_to_gcs_as_public(osm_transfer_index_file_name, gcs_data_bucket, osm_transfer_index_gcs_dir):
         client = storage.Client()
 
+        osm_transfer_index_gcs_name = osm_transfer_index_gcs_dir \
+                                      + add_timestamped_suffix(OSM_TRANSFER_INDEX_FILE_NAME_BASE) \
+                                      + OSM_TRANSFER_INDEX_FILE_NAME_EXT
         bucket = client.get_bucket(gcs_data_bucket)
         dest_blob = bucket.blob(osm_transfer_index_gcs_name)
         dest_blob.upload_from_filename(osm_transfer_index_file_name)
@@ -91,6 +115,9 @@ with airflow.DAG(
         dest_blob.make_public()
 
         return dest_blob.public_url
+
+    def add_timestamped_suffix(name):
+        return name + "_" + str(time.time()).split(".")[0]
 
     def bucket_name_and_file_name_from_gcs_uri(gcs_uri):
 
@@ -102,10 +129,11 @@ with airflow.DAG(
 
     def create_transfer_job_dict(project_id, list_url, transfer_bucket):
         now_datetime = datetime.datetime.now()
-        transfer_datetime = now_datetime + datetime.timedelta(minutes=10)
+        transfer_datetime = now_datetime + datetime.timedelta(minutes=3)
 
         job_description = "transfer--{}".format(transfer_datetime.strftime("%Y-%m-%d--%H-%M-%S"))
         job_name = "transferJobs/{}".format(job_description)
+        overwrite_objects_already_existing_in_sink = True
 
         transfer_date = {
             "day": transfer_datetime.day,
@@ -127,6 +155,10 @@ with airflow.DAG(
                 },
                 "gcsDataSink": {
                     "bucketName": transfer_bucket
+                },
+                "transferOptions": {
+                    "overwriteObjectsAlreadyExistingInSink":
+                        overwrite_objects_already_existing_in_sink
                 }
             },
             "projectId": project_id,
@@ -146,7 +178,6 @@ with airflow.DAG(
         result = storage_transfer.transferJobs().create(body=job_dict).execute()
         logging.info('Returned transferJob: {}'.format(
             json.dumps(result, indent=4)))
-
 
     transferring_to_gcs = python_operator.PythonOperator(
         task_id='transferring_to_gcs',
