@@ -1,0 +1,45 @@
+[
+  {
+    "description": null,
+    "name": "osm_id",
+    "type": "INTEGER"
+  },
+  {
+    "description": null,
+    "name": "osm_version",
+    "type": "INTEGER"
+  },
+  {
+    "description": null,
+    "name": "osm_way_id",
+    "type": "INTEGER"
+  },
+  {
+    "description": "Last-modified timestamp for this object.",
+    "name": "osm_timestamp",
+    "type": "TIMESTAMP"
+  },
+  {
+    "description": "GEOGRAPHY-encoded point",
+    "name": "geometry",
+    "type": "GEOGRAPHY"
+  },
+  {
+    "description": "Unstructured key=value attributes for this object.",
+    "fields": [
+      {
+        "description": "Attribute key.",
+        "name": "key",
+        "type": "STRING"
+      },
+      {
+        "description": "Attribute value.",
+        "name": "value",
+        "type": "STRING"
+      }
+    ],
+    "mode": "REPEATED",
+    "name": "all_tags",
+    "type": "RECORD"
+  }
+]
