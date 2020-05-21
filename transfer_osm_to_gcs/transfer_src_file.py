@@ -148,7 +148,7 @@ with airflow.DAG(
         status = "ENABLED"
         transfer_job = {
             "name": job_name,
-            "description":job_description,
+            "description": job_description,
             "transferSpec": {
                 "httpDataSource": {
                     "listUrl": list_url
