@@ -1,0 +1,23 @@
+{
+  "project_id":"osm-dev-276509",
+
+  "composer_client_id": "97336441446-fftjb9isrkr7gr07ded5cp16gskn7qdl.apps.googleusercontent.com",
+  "composer_webserver_id": "tfbc6316431b303f8p-tp",
+
+  "osm_url":"https://storage.googleapis.com/osm-dev-276509--osm-data/test_http_src/luxembourg.osm.pbf",
+  "osm_md5_url":"https://storage.googleapis.com/osm-dev-276509--osm-data/test_http_src/luxembourg.osm.pbf.md5",
+
+  "gcs_working_bucket":"osm-data-work",
+  "gcs_transfer_bucket":"osm-data-transfer",
+
+  "src_osm_gcs_uri":"gs://osm-data-transfer/storage.googleapis.com/osm-dev-276509--osm-data/test_http_src/luxembourg.osm.pbf",
+
+  "features_dir_gcs_uri":"gs://osm-data-work/features/",
+  "nodes_ways_relations_dir_gcs_uri":"gs://osm-data-work/nodes_ways_relations/",
+
+  "osm_to_features_image":"eu.gcr.io/osm-dev-276509/osm_to_features",
+  "osm_to_nodes_ways_relations_image":"eu.gcr.io/osm-dev-276509/osm_to_nodes_ways_relations",
+  "generate_layers_image":"eu.gcr.io/osm-dev-276509/generate_layers",
+
+  "bq_dataset_to_export": "osm_to_bq"
+}

@@ -1,5 +1,5 @@
 SELECT
-  {} AS feature_type,
+  '{}' AS feature_type,
   osm_id,
   osm_way_id,
   osm_version,

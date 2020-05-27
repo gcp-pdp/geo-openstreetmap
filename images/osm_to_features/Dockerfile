@@ -17,18 +17,18 @@ RUN cpan Text::CSV::Encoded
 # set env vars
 ENV PATH $PATH:/root/google-cloud-sdk/bin
 #ENV SRC_OSM_GCS_URI gs://osm-data-transfer/storage.googleapis.com/osm-dev-276509--osm-data/test_http_src/luxembourg.osm.pbf
-ENV DEST_GCS_URI gs://osm-data-work/json/
-ENV DATA_DIR /osm_to_json/data/
+#ENV FEATURES_GCS_URI gs://osm-data-work/json/
+ENV DATA_DIR /osm_to_features/data/
 
 # copy script files
-COPY src /osm_to_json/src
+COPY src /osm_to_features/src
 # set work dir
-WORKDIR /osm_to_json/src
+WORKDIR /osm_to_features/src
 
 # set sh files as executable
 RUN ["chmod", "+x", "download_osm.sh"]
 RUN ["chmod", "+x", "csv_to_json/csv-to-json.sh"]
-RUN ["chmod", "+x", "osm_to_json.sh"]
+RUN ["chmod", "+x", "osm_to_features.sh"]
 
 # run main script
-CMD ./osm_to_json.sh
+CMD ./osm_to_features.sh

@@ -1,0 +1,65 @@
+[
+  {
+    "type": "INTEGER",
+    "name": "id",
+    "description": "Object unique ID."
+  },
+  {
+    "type": "INTEGER",
+    "name": "version",
+    "description": "Version number for this object."
+  },
+  {
+    "type": "STRING",
+    "name": "username",
+    "description": "Name of user who created this version of the object."
+  },
+  {
+    "type": "INTEGER",
+    "name": "changeset",
+    "description": "Changeset number for this object."
+  },
+  {
+    "type": "BOOLEAN",
+    "name": "visible",
+    "description": "Is this version of the object visible?"
+  },
+  {
+    "type": "TIMESTAMP",
+    "name": "osm_timestamp",
+    "description": "Last-modified timestamp for this object."
+  },
+  {
+    "type": "GEOGRAPHY",
+    "name": "geometry",
+    "description": "GEOGRAPHY-encoded point"
+  },
+  {
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "name": "all_tags",
+    "description": "Unstructured key=value attributes for this object.",
+    "fields": [
+      {
+        "type": "STRING",
+        "name": "key",
+        "description": "Attribute key."
+      },
+      {
+        "type": "STRING",
+        "name": "value",
+        "description": "Attribute value."
+      }
+    ]
+  },
+  {
+    "description": null,
+    "name": "latitude",
+    "type": "NUMERIC"
+  },
+  {
+    "description": null,
+    "name": "longitude",
+    "type": "NUMERIC"
+  }
+]

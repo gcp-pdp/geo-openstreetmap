@@ -1,6 +1,7 @@
-``from google.auth.transport.requests import Request
+from google.auth.transport.requests import Request
 from google.oauth2 import id_token
 import requests
+import os
 
 
 IAM_SCOPE = 'https://www.googleapis.com/auth/iam'
@@ -21,10 +22,10 @@ def trigger_dag(data, context=None):
     # Navigate to your webserver's login page and get this from the URL
     # Or use the script found at
     # https://github.com/GoogleCloudPlatform/python-docs-samples/blob/master/composer/rest/get_client_id.py
-    client_id = '1048524459548-144k61tbj4rjha5aqvt2d5ftstihv7da.apps.googleusercontent.com'
+    client_id = os.getenv("COMPOSER_CLIENT_ID")
     # This should be part of your webserver's URL:
     # {tenant-project-id}.appspot.com
-    webserver_id = 'g9b35b5fa26123a34p-tp'
+    webserver_id = os.getenv("COMPOSER_WEBSERVER_ID")
     # The name of the DAG you wish to trigger
     dag_name = 'osm_to_big_query'
     webserver_url = (

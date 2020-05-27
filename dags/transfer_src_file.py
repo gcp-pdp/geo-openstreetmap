@@ -26,7 +26,7 @@ OSM_TRANSFER_INDEX_GCS_NAME_DIR = "gsc_transfer_index/"
 project_id = os.environ.get('PROJECT_ID')
 osm_url = os.environ.get('OSM_URL')
 osm_md5_url = os.environ.get('OSM_MD5_URL')
-gcs_data_bucket = os.environ.get('GCS_DATA_BUCKET')
+gcs_working_bucket = os.environ.get('GCS_WORKING_BUCKET')
 gcs_transfer_bucket = os.environ.get('GCS_TRANSFER_BUCKET')
 
 default_args = {
@@ -42,7 +42,7 @@ with airflow.DAG(
         schedule_interval=None) as dag:
 
     def transfer_to_gcs():
-        logging.info([osm_url, osm_md5_url, gcs_data_bucket])
+        logging.info([osm_url, osm_md5_url, gcs_working_bucket])
 
         md5_file_lines = read_file_lines_from_url(osm_md5_url)
         logging.info(md5_file_lines)
@@ -60,7 +60,7 @@ with airflow.DAG(
                                                                  content_length,
                                                                  base64_md5_file_hash)
         list_url = upload_file_to_gcs_as_public(osm_transfer_index_file_name,
-                                                gcs_data_bucket,
+                                                gcs_working_bucket,
                                                 OSM_TRANSFER_INDEX_GCS_NAME_DIR)
 
         job_dict = create_transfer_job_dict(project_id, list_url, gcs_transfer_bucket)
