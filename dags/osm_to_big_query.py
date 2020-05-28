@@ -2,7 +2,6 @@ import datetime
 import os
 import airflow
 import json
-import logging
 
 from airflow.contrib.operators import kubernetes_pod_operator
 
@@ -10,6 +9,7 @@ from airflow.contrib.operators import gcs_to_bq
 from airflow.contrib.operators import bigquery_operator
 
 from utils import bq_utils
+from utils import gcs_utils
 
 YESTERDAY = datetime.datetime.combine(
     datetime.datetime.today() - datetime.timedelta(1),
@@ -42,6 +42,7 @@ with airflow.DAG(
         'catchup=False',
         default_args=default_args,
         schedule_interval=None) as dag:
+
     def file_to_json(file_path):
         with open(file_path) as f:
             json_dict = json.load(f)
@@ -53,19 +54,7 @@ with airflow.DAG(
             return "".join(f.readlines())
 
 
-    def parse_uri_to_bucket_and_filename(file_path):
-        """Divides file uri to bucket name and file name"""
-        path_parts = file_path.split("//")
-        if len(path_parts) >= 2:
-            main_part = path_parts[1]
-            if "/" in main_part:
-                divide_index = main_part.index("/")
-                bucket_name = main_part[:divide_index]
-                file_name = main_part[divide_index + 1 - len(main_part):]
-
-                return bucket_name, file_name
-        return "", ""
-
+    src_osm_gcs_uri_from_args = "gs://{}/{}".format('{{ dag_run.conf.bucket }}', '{{ dag_run.conf.name }}')
 
     # TASK #1. osm_to_features
     osm_to_features = kubernetes_pod_operator.KubernetesPodOperator(
@@ -73,13 +62,13 @@ with airflow.DAG(
         name='osm-to-features',
         namespace='default',
         image_pull_policy='Always',
-        env_vars={'SRC_OSM_GCS_URI': src_osm_gcs_uri, 'FEATURES_DIR_GCS_URI': features_dir_gcs_uri},
+        env_vars={'SRC_OSM_GCS_URI': src_osm_gcs_uri_from_args, 'FEATURES_DIR_GCS_URI': features_dir_gcs_uri},
         image=osm_to_features_image)
 
     # TASK #2.N. {}_feature_json_to_bq
     features_tasks_data = []
     nodes_schema = file_to_json(local_data_dir_path + 'schemas/features_table_schema.json')
-    src_features_gcs_bucket, src_features_gcs_dir = parse_uri_to_bucket_and_filename(features_dir_gcs_uri)
+    src_features_gcs_bucket, src_features_gcs_dir = gcs_utils.parse_uri_to_bucket_and_filename(features_dir_gcs_uri)
     jsonl_file_names_format = src_features_gcs_dir + 'feature-{}.geojson.csv.jsonl'
 
     for feature in features:
@@ -119,7 +108,7 @@ with airflow.DAG(
         name='osm-to-nodes-ways-relations',
         namespace='default',
         image_pull_policy='Always',
-        env_vars={'PROJECT_ID': project_id, 'SRC_OSM_GCS_URI': src_osm_gcs_uri,
+        env_vars={'PROJECT_ID': project_id, 'SRC_OSM_GCS_URI': src_osm_gcs_uri_from_args,
                   'NODES_WAYS_RELATIONS_DIR_GCS_URI': nodes_ways_relations_dir_gcs_uri},
         image=osm_to_nodes_ways_relations_image)
 
@@ -131,9 +120,9 @@ with airflow.DAG(
 
     elements_and_schemas = [(nodes_ways_relations_elements[i], schemas[i])
                             for i in range(len(nodes_ways_relations_elements))]
-    src_nodes_ways_relations_gcs_bucket, src_nodes_ways_relations_gcs_dir = parse_uri_to_bucket_and_filename(
+    src_nodes_ways_relations_gcs_bucket, src_nodes_ways_relations_gcs_dir = gcs_utils.parse_uri_to_bucket_and_filename(
         nodes_ways_relations_dir_gcs_uri)
-    jsonl_file_names_format = src_nodes_ways_relations_gcs_dir + '{}.json'
+    jsonl_file_names_format = src_nodes_ways_relations_gcs_dir + '{}.jsonl'
 
     for element_and_schema in elements_and_schemas:
         element, schema = element_and_schema

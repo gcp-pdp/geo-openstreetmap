@@ -13,6 +13,8 @@ from urllib import request
 from airflow.operators import python_operator
 from google.cloud import storage
 
+from utils import gcs_utils
+
 YESTERDAY = datetime.datetime.combine(
     datetime.datetime.today() - datetime.timedelta(1),
     datetime.datetime.min.time())
@@ -20,13 +22,12 @@ YESTERDAY = datetime.datetime.combine(
 OSM_TRANSFER_INDEX_FILE_NAME_BASE = "osm_transfer_index"
 OSM_TRANSFER_INDEX_FILE_NAME_EXT = ".tsv"
 OSM_TRANSFER_INDEX_FILE_NAME = OSM_TRANSFER_INDEX_FILE_NAME_BASE + OSM_TRANSFER_INDEX_FILE_NAME_EXT
-OSM_TRANSFER_INDEX_GCS_NAME_DIR = "gsc_transfer_index/"
 
 
 project_id = os.environ.get('PROJECT_ID')
 osm_url = os.environ.get('OSM_URL')
 osm_md5_url = os.environ.get('OSM_MD5_URL')
-gcs_working_bucket = os.environ.get('GCS_WORKING_BUCKET')
+transfer_index_files_dir_gcs_uri = os.environ.get('TRANSFER_INDEX_FILES_DIR_GCS_URI')
 gcs_transfer_bucket = os.environ.get('GCS_TRANSFER_BUCKET')
 
 default_args = {
@@ -39,11 +40,9 @@ with airflow.DAG(
         'transferring_src_osm_file',
         'catchup=False',
         default_args=default_args,
-        schedule_interval=None) as dag:
+        schedule_interval="@daily") as dag:
 
     def transfer_to_gcs():
-        logging.info([osm_url, osm_md5_url, gcs_working_bucket])
-
         md5_file_lines = read_file_lines_from_url(osm_md5_url)
         logging.info(md5_file_lines)
 
@@ -59,9 +58,10 @@ with airflow.DAG(
                                                                  osm_url,
                                                                  content_length,
                                                                  base64_md5_file_hash)
+        index_gcs_bucket, index_gcs_dir = gcs_utils.parse_uri_to_bucket_and_filename(transfer_index_files_dir_gcs_uri)
         list_url = upload_file_to_gcs_as_public(osm_transfer_index_file_name,
-                                                gcs_working_bucket,
-                                                OSM_TRANSFER_INDEX_GCS_NAME_DIR)
+                                                index_gcs_bucket,
+                                                index_gcs_dir)
 
         job_dict = create_transfer_job_dict(project_id, list_url, gcs_transfer_bucket)
         execute_transfer_job(job_dict)

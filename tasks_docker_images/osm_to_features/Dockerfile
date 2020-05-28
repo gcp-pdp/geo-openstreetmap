@@ -16,8 +16,6 @@ RUN cpan Text::CSV::Encoded
 
 # set env vars
 ENV PATH $PATH:/root/google-cloud-sdk/bin
-#ENV SRC_OSM_GCS_URI gs://osm-data-transfer/storage.googleapis.com/osm-dev-276509--osm-data/test_http_src/luxembourg.osm.pbf
-#ENV FEATURES_GCS_URI gs://osm-data-work/json/
 ENV DATA_DIR /osm_to_features/data/
 
 # copy script files
