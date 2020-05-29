@@ -65,6 +65,41 @@ Don't miss to add a `roles/storage.legacyBucketReader` role to your Storage Tran
     docker build -t $GENERATE_LAYERS_IMAGE tasks_docker_images/generate_layers/
     docker push $GENERATE_LAYERS_IMAGE
     ```
+
+### Composer setup
+1. Choose Cloud Composer nodes parameters:
+    ```bash
+    DISK_SIZE=300 # you can pick another size 
+    MACHINE_TYPE=n1-standard-8 # you can pick another machine type 
+    ```
+2. Create the [Cloud Composer](https://cloud.google.com/composer) environment:
+    ```bash
+    COMPOSER_ENV_NAME=osm-to-bq
+    gcloud composer environments create $COMPOSER_ENV_NAME \
+        --location $REGION_LOCATION \
+        --disk-size $DISK_SIZE \
+        --machine-type $MACHINE_TYPE
+    ```
+3. Fill `deployment/config/config.json` with the project's parameters using `deployment/config/generate_config.py` script:
+    ```
+    CONFIG_FILE=deployment/config/config.json
+    python3 deployment/config/generate_config.py $CONFIG_FILE \
+        --project_id=$PROJECT_ID \
+        --osm_url=$OSM_URL \
+        --osm_md5_url=$OSM_MD5_URL \
+        --gcs_transfer_bucket=$TRANSFER_BUCKET_NAME \
+        --features_dir_gcs_uri=gs://$WORK_BUCKET_NAME/features/ \
+        --nodes_ways_relations_dir_gcs_uri=gs://$WORK_BUCKET_NAME/nodes_ways_relations/ \
+        --transfer_index_files_dir_gcs_uri=gs://$WORK_BUCKET_NAME/gsc_transfer_index/ \
+        --osm_to_features_image=$OSM_TO_FEATURES_IMAGE \
+        --osm_to_nodes_ways_relations_image=$OSM_TO_NODES_WAYS_RELATIONS_IMAGE \
+        --generate_layers_image=$GENERATE_LAYERS_IMAGE \
+        --bq_dataset_to_export=$BQ_DATASET
+    ```
+4. Set variables from `deployment/config/config.json` to Cloud Composer environment:
+    ```bash
+    deployment/config/set_env_vars_from_config.sh $CONFIG_FILE $COMPOSER_ENV_NAME $REGION_LOCATION   
+    ```
 ### Setup OSM_TO_BQ triggering
 1. Set your Composer Environment Client Id to `COMPOSER_CLIENT_ID`.
 You can use `utils/get_client_id.py` script to get your ID:
@@ -91,33 +126,8 @@ You can use `utils/get_client_id.py` script to get your ID:
         --set-env-vars COMPOSER_CLIENT_ID=$COMPOSER_CLIENT_ID,COMPOSER_WEBSERVER_ID=$COMPOSER_WEBSERVER_ID
     ```
 
-### Composer setup
-1. Create the [Cloud Composer](https://cloud.google.com/composer) environment:
-    ```bash
-    COMPOSER_ENV_NAME=osm-to-bq
-    ./deployment/create_composer_env.sh $COMPOSER_ENV_NAME $REGION_LOCATION   
-    ```
-2. Fill `deployment/config/config.json` with the project's parameters using `deployment/config/generate_config.py` script:
-    ```
-    CONFIG_FILE=deployment/config/config.json
-    python3 deployment/config/generate_config.py $CONFIG_FILE \
-        --project_id=$PROJECT_ID \
-        --osm_url=$OSM_URL \
-        --osm_md5_url=$OSM_MD5_URL \
-        --gcs_transfer_bucket=$TRANSFER_BUCKET_NAME \
-        --features_dir_gcs_uri=gs://$WORK_BUCKET_NAME/features/ \
-        --nodes_ways_relations_dir_gcs_uri=gs://$WORK_BUCKET_NAME/nodes_ways_relations/ \
-        --transfer_index_files_dir_gcs_uri=gs://$WORK_BUCKET_NAME/gsc_transfer_index/ \
-        --osm_to_features_image=$OSM_TO_FEATURES_IMAGE \
-        --osm_to_nodes_ways_relations_image=$OSM_TO_NODES_WAYS_RELATIONS_IMAGE \
-        --generate_layers_image=$GENERATE_LAYERS_IMAGE \
-        --bq_dataset_to_export=$BQ_DATASET
-    ```
-3. Set variables from `deployment/config/config.json` to Cloud Composer environment:
-    ```bash
-    deployment/config/set_env_vars_from_config.sh $CONFIG_FILE $COMPOSER_ENV_NAME $REGION_LOCATION   
-    ```
-4. Upload DAG's and it's dependency files to the environment GCS:
+### Uploading DAGs and running
+1. Upload DAG's and it's dependency files to the environment GCS:
     ```bash
     DAGS_PATH=dags/*
     for DAG_ELEMENT in $DAGS_PATH; do

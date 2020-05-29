@@ -40,7 +40,7 @@ with airflow.DAG(
         'transferring_src_osm_file',
         'catchup=False',
         default_args=default_args,
-        schedule_interval="@daily") as dag:
+        schedule_interval="@weekly") as dag:
 
     def transfer_to_gcs():
         md5_file_lines = read_file_lines_from_url(osm_md5_url)
