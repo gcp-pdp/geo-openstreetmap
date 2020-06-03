@@ -11,6 +11,8 @@ RUN pip3 install --upgrade google-cloud-storage
 
 # install pyosmium
 RUN pip3 install osmium
+# install guppy3 (memory profiler)
+RUN pip3 install guppy3
 
 # set env vars
 ENV DATA_DIR /osm_to_nodes_ways_relations/data/

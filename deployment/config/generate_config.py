@@ -27,6 +27,12 @@ if __name__ == '__main__':
                         required=True)
     parser.add_argument('--generate_layers_image', help='generate_layers image name', required=True)
 
+    parser.add_argument('--osm_to_features_gke_pool', help='osm_to_features GKE pool name', required=True)
+    parser.add_argument('--osm_to_features_gke_pod_requested_memory', help='osm_to_features GKE POD requested memory',
+                        required=True)
+    parser.add_argument('--osm_to_nodes_ways_relations_gke_pool', help='osm_to_nodes_ways_relations GKE pool name',
+                        required=True)
+
     parser.add_argument('--bq_dataset_to_export', help='BigQuery dataset name to export results', required=True)
 
     args = parser.parse_args()

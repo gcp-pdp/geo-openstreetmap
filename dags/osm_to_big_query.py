@@ -7,6 +7,7 @@ from airflow.contrib.operators import kubernetes_pod_operator
 
 from airflow.contrib.operators import gcs_to_bq
 from airflow.contrib.operators import bigquery_operator
+from airflow.contrib.kubernetes import pod
 
 from utils import bq_utils
 from utils import gcs_utils
@@ -20,11 +21,16 @@ bq_dataset_to_export = os.environ.get('BQ_DATASET_TO_EXPORT')
 src_osm_gcs_uri = os.environ.get('SRC_OSM_GCS_URI')
 
 features_dir_gcs_uri = os.environ.get('FEATURES_DIR_GCS_URI')
-nodes_ways_relations_dir_gcs_uri = os.environ.get('NODES_WAYS_RELATIONS_DIR_GCS_URI')
-
 osm_to_features_image = os.environ.get('OSM_TO_FEATURES_IMAGE')
+osm_to_features_gke_pool = os.environ.get('OSM_TO_FEATURES_GKE_POOL')
+osm_to_features_gke_pod_requested_memory = os.environ.get('OSM_TO_FEATURES_GKE_POD_REQUESTED_MEMORY')
+
+nodes_ways_relations_dir_gcs_uri = os.environ.get('NODES_WAYS_RELATIONS_DIR_GCS_URI')
 osm_to_nodes_ways_relations_image = os.environ.get('OSM_TO_NODES_WAYS_RELATIONS_IMAGE')
+osm_to_nodes_ways_relations_gke_pool = os.environ.get('OSM_TO_NODES_WAYS_RELATIONS_GKE_POOL')
+
 generate_layers_image = os.environ.get('GENERATE_LAYERS_IMAGE')
+test_osm_gcs_uri = os.environ.get('TEST_OSM_GCS_URI')
 
 features = ["points", "lines", "multilinestrings", "multipolygons", "other_relations"]
 feature_union_bq_table_name = "feature_union"
@@ -42,7 +48,6 @@ with airflow.DAG(
         'catchup=False',
         default_args=default_args,
         schedule_interval=None) as dag:
-
     def file_to_json(file_path):
         with open(file_path) as f:
             json_dict = json.load(f)
@@ -54,16 +59,45 @@ with airflow.DAG(
             return "".join(f.readlines())
 
 
-    src_osm_gcs_uri_from_args = "gs://{}/{}".format('{{ dag_run.conf.bucket }}', '{{ dag_run.conf.name }}')
+    def create_gke_affinity_with_pool_name(pool_name):
+        return {'nodeAffinity': {
+            'requiredDuringSchedulingIgnoredDuringExecution': {
+                'nodeSelectorTerms': [{
+                    'matchExpressions': [{
+                        'key': 'cloud.google.com/gke-nodepool',
+                        'operator': 'In',
+                        'values': [pool_name]
+                    }]
+                }]
+            }
+        }}
+
+
+    src_osm_gcs_uri = test_osm_gcs_uri if test_osm_gcs_uri else "gs://{}/{}".format('{{ dag_run.conf.bucket }}',
+                                                                                    '{{ dag_run.conf.name }}')
 
     # TASK #1. osm_to_features
-    osm_to_features = kubernetes_pod_operator.KubernetesPodOperator(
-        task_id='osm-to-features',
-        name='osm-to-features',
-        namespace='default',
-        image_pull_policy='Always',
-        env_vars={'SRC_OSM_GCS_URI': src_osm_gcs_uri_from_args, 'FEATURES_DIR_GCS_URI': features_dir_gcs_uri},
-        image=osm_to_features_image)
+    osm_to_features_branches = [("multipolygons", ["multipolygons"]),
+                                ("other", ["other_relations", "points", "multilinestrings", "lines"])]
+    osm_to_features_tasks = []
+    for branch_tuple in osm_to_features_branches:
+        branch_name, branch_layers_to_process = branch_tuple
+
+        layers = ",".join(branch_layers_to_process)
+        osm_to_features_task = kubernetes_pod_operator.KubernetesPodOperator(
+            task_id='osm-to-features-{}'.format(branch_name),
+            name='osm-to-features-{}'.format(branch_name),
+            namespace='default',
+            image_pull_policy='Always',
+            env_vars={'SRC_OSM_GCS_URI': src_osm_gcs_uri,
+                      'FEATURES_DIR_GCS_URI': features_dir_gcs_uri,
+                      'LAYERS': layers},
+            image=osm_to_features_image,
+            resources=pod.Resources(request_memory=osm_to_features_gke_pod_requested_memory),
+            affinity=create_gke_affinity_with_pool_name(osm_to_features_gke_pool)
+        )
+
+        osm_to_features_tasks.append(osm_to_features_task)
 
     # TASK #2.N. {}_feature_json_to_bq
     features_tasks_data = []
@@ -108,9 +142,11 @@ with airflow.DAG(
         name='osm-to-nodes-ways-relations',
         namespace='default',
         image_pull_policy='Always',
-        env_vars={'PROJECT_ID': project_id, 'SRC_OSM_GCS_URI': src_osm_gcs_uri_from_args,
+        env_vars={'PROJECT_ID': project_id, 'SRC_OSM_GCS_URI': src_osm_gcs_uri,
                   'NODES_WAYS_RELATIONS_DIR_GCS_URI': nodes_ways_relations_dir_gcs_uri},
-        image=osm_to_nodes_ways_relations_image)
+        image=osm_to_nodes_ways_relations_image,
+        affinity=create_gke_affinity_with_pool_name(osm_to_nodes_ways_relations_gke_pool)
+    )
 
     # TASK #5.N. nodes_ways_relations_to_bq
     nodes_ways_relations_elements = ["nodes", "ways", "relations"]
@@ -155,9 +191,10 @@ with airflow.DAG(
     nodes_ways_relations_tasks = [nodes_ways_relations_tasks_item[0]
                                   for nodes_ways_relations_tasks_item in nodes_ways_relations_tasks_data]
 
-    osm_to_features.set_downstream(feature_tasks)
+    for osm_to_feature_task in osm_to_features_tasks:
+        osm_to_feature_task.set_downstream(feature_tasks)
     feature_union_task.set_upstream(feature_tasks)
 
-    osm_to_nodes_ways_relations.set_upstream(feature_union_task)
     osm_to_nodes_ways_relations.set_downstream(nodes_ways_relations_tasks)
-    generate_layers.set_upstream(nodes_ways_relations_tasks)
+
+    generate_layers.set_upstream(nodes_ways_relations_tasks + [feature_union_task])

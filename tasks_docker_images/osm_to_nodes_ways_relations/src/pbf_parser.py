@@ -193,7 +193,7 @@ if __name__ == "__main__":
 
     logging.info("Creating {} files".format(str(results_local_paths)))
     simple_handler = CustomHandler(entities_out_files_dict)
-    simple_handler.apply_file(dest_local_path)
+    simple_handler.apply_file(dest_local_path, idx="dense_file_array")
 
     for entity, out_file in entities_out_files_dict.items():
         out_file.close()

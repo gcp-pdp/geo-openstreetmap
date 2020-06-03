@@ -10,7 +10,6 @@ RUN apt-get install build-essential -y
 RUN curl -sSL https://sdk.cloud.google.com | bash
 
 # perl installation
-RUN curl -L http://xrl.us/installperlnix | bash
 RUN cpan JSON
 RUN cpan Text::CSV::Encoded
 
@@ -29,4 +28,4 @@ RUN ["chmod", "+x", "csv_to_json/csv-to-json.sh"]
 RUN ["chmod", "+x", "osm_to_features.sh"]
 
 # run main script
-CMD ./osm_to_features.sh
+CMD ./osm_to_features.sh $LAYERS

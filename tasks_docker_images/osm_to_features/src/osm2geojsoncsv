@@ -19,9 +19,9 @@ set -e
 OGRCONFIG=osmconf.ini
 
 
-if [ "$#" -ne 2 ]
+if [ "$#" -ne 3 ]
 then
-    echo "Use as:\n\t$0 INPUT_FILENAME_OSM_PBF OUTPUT_BASENAME"
+    echo "Use as: $0 INPUT_FILENAME_OSM_PBF OUTPUT_BASENAME LAYERS"
     exit 1
 fi
 
@@ -29,6 +29,7 @@ fi
 OSMNAME="$1"
 # output file basename (without extension)
 NAME="$2"
+LAYERS="$3"
 
 # check input file
 if [ ! -f "$OSMNAME" ]
@@ -58,7 +59,7 @@ fi
 # --config OSM_COMPRESS_NODES YES
 # GDAL_CACHEMAX and OSM_MAX_TMPFILE_SIZE defined in MB
 # for GDAL_CACHEMAX=4000 and OSM_MAX_TMPFILE_SIZE=4000 recommended RAM=60GB
-for ogrtype in points lines multilinestrings multipolygons other_relations
+for ogrtype in $(echo $LAYERS | sed "s/,/ /g")
 do
     if [ "$ogrtype" = "multipolygons" ]
     then
@@ -74,14 +75,11 @@ do
     "${NAME}-${ogrtype}.geojson.csv" "${OSMNAME}" \
     --config OSM_CONFIG_FILE "${OGRCONFIG}" \
     --config OGR_INTERLEAVED_READING YES \
-    --config GDAL_CACHEMAX 4000 \
-    --config OSM_MAX_TMPFILE_SIZE 4000 \
+    --config GDAL_CACHEMAX 20000 \
+    --config OSM_MAX_TMPFILE_SIZE 100000 \
     -dialect sqlite \
-    -sql "select AsGeoJSON(geometry) AS geometry, ${osm_fields}, replace(all_tags,X'0A','') \
-        as all_tags from ${ogrtype} where ST_IsValid(geometry) = 1" \
+    -sql "select AsGeoJSON(geometry) AS geometry, ${osm_fields}, replace(all_tags,X'0A','') as all_tags from ${ogrtype} where ST_IsValid(geometry) = 1" \
     --debug on \
-    2>"${NAME}-${ogrtype}.debug.log" \
-    &
+    2>"${NAME}-${ogrtype}.debug.log"
 done
-wait
 echo "Complete"
