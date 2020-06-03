@@ -3,6 +3,8 @@
 This doc describes a setup process of the [Cloud Composer](https://cloud.google.com/composer) pipeline 
 for exporting [OSM planet](https://planet.openstreetmap.org/) files to [BigQuery](https://cloud.google.com/bigquery).
 
+![pipeline_graph](./docs/graph.png)
+
 ### Source files
 URL of the source Planet file and it's MD5 hash should be saved into following variables:
 ```bash
@@ -67,20 +69,61 @@ Don't miss to add a `roles/storage.legacyBucketReader` role to your Storage Tran
     ```
 
 ### Composer setup
-1. Choose Cloud Composer nodes parameters:
-    ```bash
-    DISK_SIZE=300 # you can pick another size 
-    MACHINE_TYPE=n1-standard-8 # you can pick another machine type 
-    ```
-2. Create the [Cloud Composer](https://cloud.google.com/composer) environment:
+1. Create the [Cloud Composer](https://cloud.google.com/composer) environment:
     ```bash
     COMPOSER_ENV_NAME=osm-to-bq
     gcloud composer environments create $COMPOSER_ENV_NAME \
         --location $REGION_LOCATION \
         --disk-size $DISK_SIZE \
-        --machine-type $MACHINE_TYPE
+        --machine-type $MACHINE_TYPE \
+        --zone 
     ```
-3. Fill `deployment/config/config.json` with the project's parameters using `deployment/config/generate_config.py` script:
+### Create GKE node pools
+For resource high-consuming operations we should create 
+separate [GCK node pools](https://cloud.google.com/composer/docs/how-to/using/using-kubernetes-pod-operator#node-pool)
+1. Get needed parameters for the GKE node pool creation:
+    ```bash
+    GKE_CLUSTER_FULL_NAME=$(gcloud composer environments describe $COMPOSER_ENV_NAME \
+        --location $REGION_LOCATION --format json | jq -r '.config.gkeCluster')
+    GKE_CLUSTER_NAME=$(echo $GKE_CLUSTER_FULL_NAME | awk -F/ '{print $6}')
+    GKE_ZONE=$(echo $GKE_CLUSTER_FULL_NAME | awk -F/ '{print $4}')
+    ```
+2. Create node pool for the `osm_to_features` operation:
+    ```buildoutcfg
+    OSM_TO_FEATURES_POOL_NAME=osm-to-features-pool
+    OSM_TO_FEATURES_POOL_MACHINE_TYPE=n1-highmem-32
+    OSM_TO_FEATURES_POOL_NUM_NODES=2
+    OSM_TO_FEATURES_POOL_DISK_SIZE=800
+    gcloud container node-pools create $OSM_TO_FEATURES_POOL_NAME \
+        --cluster $GKE_CLUSTER_NAME \
+        --project $PROJECT_ID \
+        --zone $GKE_ZONE \
+        --machine-type $OSM_TO_FEATURES_POOL_MACHINE_TYPE \
+        --num-nodes $OSM_TO_FEATURES_POOL_NUM_NODES \
+        --disk-size $OSM_TO_FEATURES_POOL_DISK_SIZE \
+        --scopes gke-default,storage-rw
+    ```
+3. Save value of requested memory for `osm_to_features` into variable:
+    ```
+    OSM_TO_FEATURES_POD_REQUESTED_MEMORY=150G
+    ```
+4. Create node pool for the `osm_to_nodes_ways_relations` operation:
+    ```buildoutcfg
+    OSM_TO_NODES_WAYS_FEATURES_POOL_NAME=osm-to-nodes-ways-relations-pool
+    OSM_TO_NODES_WAYS_FEATURES_POOL_MACHINE_TYPE=n1-highmem-4
+    OSM_TO_NODES_WAYS_FEATURES_POOL_NUM_NODES=1
+    OSM_TO_NODES_WAYS_FEATURES_POOL_DISK_SIZE=800
+    gcloud container node-pools create $OSM_TO_NODES_WAYS_FEATURES_POOL_NAME \
+        --cluster $GKE_CLUSTER_NAME \
+        --project $PROJECT_ID \
+        --zone $GKE_ZONE \
+        --machine-type $OSM_TO_NODES_WAYS_FEATURES_POOL_MACHINE_TYPE \
+        --num-nodes $OSM_TO_NODES_WAYS_FEATURES_POOL_NUM_NODES \
+        --disk-size $OSM_TO_NODES_WAYS_FEATURES_POOL_DISK_SIZE \
+        --scopes gke-default,storage-rw
+    ```
+### Set pipeline parameters into Composer env vars 
+1. Fill `deployment/config/config.json` with the project's parameters using `deployment/config/generate_config.py` script:
     ```
     CONFIG_FILE=deployment/config/config.json
     python3 deployment/config/generate_config.py $CONFIG_FILE \
@@ -93,26 +136,30 @@ Don't miss to add a `roles/storage.legacyBucketReader` role to your Storage Tran
         --transfer_index_files_dir_gcs_uri=gs://$WORK_BUCKET_NAME/gsc_transfer_index/ \
         --osm_to_features_image=$OSM_TO_FEATURES_IMAGE \
         --osm_to_nodes_ways_relations_image=$OSM_TO_NODES_WAYS_RELATIONS_IMAGE \
+        --osm_to_features_gke_pool=$OSM_TO_FEATURES_POOL_NAME \
+        --osm_to_features_gke_pod_requested_memory=$OSM_TO_FEATURES_POD_REQUESTED_MEMORY \
+        --osm_to_nodes_ways_relations_gke_pool=$OSM_TO_NODES_WAYS_FEATURES_POOL_NAME \
         --generate_layers_image=$GENERATE_LAYERS_IMAGE \
         --bq_dataset_to_export=$BQ_DATASET
     ```
-4. Set variables from `deployment/config/config.json` to Cloud Composer environment:
+2. Set variables from `deployment/config/config.json` to Cloud Composer environment:
     ```bash
     deployment/config/set_env_vars_from_config.sh $CONFIG_FILE $COMPOSER_ENV_NAME $REGION_LOCATION   
     ```
+
 ### Setup OSM_TO_BQ triggering
 1. Set your Composer Environment Client Id to `COMPOSER_CLIENT_ID`.
 You can use `utils/get_client_id.py` script to get your ID:
     ```bash
     python3 utils/get_client_id.py $PROJECT_ID $REGION_LOCATION $COMPOSER_ENV_NAME
     ```
-2. Set your Airflow WebServer Id to `COMPOSER_WEBSERVER_ID`. You can find it in the output of this command:
+2. Set your Airflow WebServer Id to `COMPOSER_WEBSERVER_ID` with the following this command:
     ```bash
-    gcloud composer environments describe $COMPOSER_ENV_NAME --location $REGION_LOCATION
-    ```
-   as a part of airflowUri name:
-    ```
-    airflowUri: https://{YOUR_COMPOSER_WEBSERVER_ID}.appspot.com
+   COMPOSER_WEBSERVER_ID=$(gcloud composer environments describe $COMPOSER_ENV_NAME \
+        --location $REGION_LOCATION --format json | \
+        jq -r '.config.airflowUri' | \
+        awk -F/ '{print $3}' | \
+        cut -d '.' -f1)
     ```
 3. Create a [Cloud Function](https://cloud.google.com/functions) that will trigger `osm-to-bq` after source OSM file transfer:
     ```bash
