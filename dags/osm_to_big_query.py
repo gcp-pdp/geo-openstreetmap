@@ -32,7 +32,6 @@ osm_to_nodes_ways_relations_gke_pool = os.environ.get('OSM_TO_NODES_WAYS_RELATIO
 generate_layers_image = os.environ.get('GENERATE_LAYERS_IMAGE')
 test_osm_gcs_uri = os.environ.get('TEST_OSM_GCS_URI')
 
-features = ["points", "lines", "multilinestrings", "multipolygons", "other_relations"]
 feature_union_bq_table_name = "feature_union"
 
 local_data_dir_path = "/home/airflow/gcs/dags/"
@@ -77,16 +76,23 @@ with airflow.DAG(
                                                                                     '{{ dag_run.conf.name }}')
 
     # TASK #1. osm_to_features
-    osm_to_features_branches = [("multipolygons", ["multipolygons"]),
-                                ("other", ["other_relations", "points", "multilinestrings", "lines"])]
-    osm_to_features_tasks = []
-    for branch_tuple in osm_to_features_branches:
-        branch_name, branch_layers_to_process = branch_tuple
+    # osm_to_features_branches = [("multipolygons", ["multipolygons"]),
+    #                             ("other-features", ["other_relations", "points", "multilinestrings", "lines"])]
 
-        layers = ",".join(branch_layers_to_process)
+    osm_to_features_branches = [
+        ("all-features", ["other_relations", "points", "multilinestrings", "lines", "multipolygons"])]
+    features = []
+    for osm_to_features_branch in osm_to_features_branches:
+        features.extend(osm_to_features_branch[1])
+
+    osm_to_features_tasks_data = []
+    for branch_tuple in osm_to_features_branches:
+        branch_name, branch_features_to_process = branch_tuple
+
+        layers = ",".join(branch_features_to_process)
         osm_to_features_task = kubernetes_pod_operator.KubernetesPodOperator(
-            task_id='osm-to-features-{}'.format(branch_name),
-            name='osm-to-features-{}'.format(branch_name),
+            task_id='osm-to-features--{}'.format(branch_name),
+            name='osm-to-features--{}'.format(branch_name),
             namespace='default',
             image_pull_policy='Always',
             env_vars={'SRC_OSM_GCS_URI': src_osm_gcs_uri,
@@ -97,10 +103,10 @@ with airflow.DAG(
             affinity=create_gke_affinity_with_pool_name(osm_to_features_gke_pool)
         )
 
-        osm_to_features_tasks.append(osm_to_features_task)
+        osm_to_features_tasks_data.append((osm_to_features_task, branch_name))
 
     # TASK #2.N. {}_feature_json_to_bq
-    features_tasks_data = []
+    features_to_bq_tasks_data = []
     nodes_schema = file_to_json(local_data_dir_path + 'schemas/features_table_schema.json')
     src_features_gcs_bucket, src_features_gcs_dir = gcs_utils.parse_uri_to_bucket_and_filename(features_dir_gcs_uri)
     jsonl_file_names_format = src_features_gcs_dir + 'feature-{}.geojson.csv.jsonl'
@@ -119,12 +125,12 @@ with airflow.DAG(
             schema_fields=nodes_schema,
             write_disposition='WRITE_TRUNCATE',
             dag=dag)
-        features_tasks_data.append((task, feature, destination_dataset_table))
+        features_to_bq_tasks_data.append((task, feature, destination_dataset_table))
 
     # TASK #3. feature_union
     create_features_part_format = file_to_text(local_data_dir_path + 'sql/create_features_part_format.sql')
     create_features_queries = [create_features_part_format.format(task_tuple[1], project_id, task_tuple[2])
-                               for task_tuple in features_tasks_data]
+                               for task_tuple in features_to_bq_tasks_data]
     feature_union_query = bq_utils.union_queries(create_features_queries)
 
     destination_table = "{}.{}".format(bq_dataset_to_export, feature_union_bq_table_name)
@@ -187,14 +193,25 @@ with airflow.DAG(
         env_vars={'PROJECT_ID': project_id, 'BQ_DATASET_TO_EXPORT': bq_dataset_to_export},
         image=generate_layers_image)
 
-    feature_tasks = [feature_tasks_item[0] for feature_tasks_item in features_tasks_data]
+    # Graph building
+    branch_and_features_to_bq_tasks = {}
+    for osm_to_features_branch in osm_to_features_branches:
+        branch_name, branch_features = osm_to_features_branch
+
+        tasks_per_features_branch = []
+        for feature_tasks_item in features_to_bq_tasks_data:
+            if feature_tasks_item[1] in branch_features:
+                tasks_per_features_branch.append(feature_tasks_item[0])
+        branch_and_features_to_bq_tasks[branch_name] = tasks_per_features_branch
+
+    features_to_bq_tasks = [features_to_bq_tasks_item[0] for features_to_bq_tasks_item in features_to_bq_tasks_data]
     nodes_ways_relations_tasks = [nodes_ways_relations_tasks_item[0]
                                   for nodes_ways_relations_tasks_item in nodes_ways_relations_tasks_data]
 
-    for osm_to_feature_task in osm_to_features_tasks:
-        osm_to_feature_task.set_downstream(feature_tasks)
-    feature_union_task.set_upstream(feature_tasks)
+    for osm_to_feature_task_data_item in osm_to_features_tasks_data:
+        task, branch_name = osm_to_feature_task_data_item
+        task.set_downstream(branch_and_features_to_bq_tasks[branch_name])
 
+    feature_union_task.set_upstream(features_to_bq_tasks)
     osm_to_nodes_ways_relations.set_downstream(nodes_ways_relations_tasks)
-
     generate_layers.set_upstream(nodes_ways_relations_tasks + [feature_union_task])

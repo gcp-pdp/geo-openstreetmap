@@ -1,1 +1,0 @@
-# osm to nodes/ways/relations

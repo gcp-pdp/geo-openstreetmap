@@ -92,7 +92,7 @@ separate [GCK node pools](https://cloud.google.com/composer/docs/how-to/using/us
     ```buildoutcfg
     OSM_TO_FEATURES_POOL_NAME=osm-to-features-pool
     OSM_TO_FEATURES_POOL_MACHINE_TYPE=n1-highmem-32
-    OSM_TO_FEATURES_POOL_NUM_NODES=2
+    OSM_TO_FEATURES_POOL_NUM_NODES=1
     OSM_TO_FEATURES_POOL_DISK_SIZE=800
     gcloud container node-pools create $OSM_TO_FEATURES_POOL_NAME \
         --cluster $GKE_CLUSTER_NAME \
@@ -110,7 +110,7 @@ separate [GCK node pools](https://cloud.google.com/composer/docs/how-to/using/us
 4. Create node pool for the `osm_to_nodes_ways_relations` operation:
     ```buildoutcfg
     OSM_TO_NODES_WAYS_FEATURES_POOL_NAME=osm-to-nodes-ways-relations-pool
-    OSM_TO_NODES_WAYS_FEATURES_POOL_MACHINE_TYPE=n1-highmem-4
+    OSM_TO_NODES_WAYS_FEATURES_POOL_MACHINE_TYPE=n1-highmem-32
     OSM_TO_NODES_WAYS_FEATURES_POOL_NUM_NODES=1
     OSM_TO_NODES_WAYS_FEATURES_POOL_DISK_SIZE=800
     gcloud container node-pools create $OSM_TO_NODES_WAYS_FEATURES_POOL_NAME \

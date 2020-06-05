@@ -16,7 +16,6 @@ from osmium.osm._osm import OSMObject
 from osmium.osm._osm import RelationMember
 
 
-
 @dataclass
 class OsmObjectDTO(object):
     id: int
@@ -146,11 +145,11 @@ def upload_file_to_gcs(filename, destination_bucket_name, destination_blob_name)
     """
     bucket = storage.Client().bucket(destination_bucket_name)
     blob = bucket.blob(destination_blob_name)
-    logging.info("Uploading of {} to gs://{}/{}...".format(filename, dest_bucket, destination_blob_name))
+    logging.info("Uploading of {} to gs://{}/{}...".format(filename, destination_bucket_name, destination_blob_name))
     blob.upload_from_filename(
         filename,
         content_type="text/plain")
-    logging.info("Finished uploading of {} to gs://{}/{}".format(filename, dest_bucket, destination_blob_name))
+    logging.info("Finished uploading of {} to gs://{}/{}".format(filename, destination_bucket_name, destination_blob_name))
 
 def parse_uri_to_bucket_and_filename(file_path):
     """Divides file uri to bucket name and file name"""
@@ -193,7 +192,7 @@ if __name__ == "__main__":
 
     logging.info("Creating {} files".format(str(results_local_paths)))
     simple_handler = CustomHandler(entities_out_files_dict)
-    simple_handler.apply_file(dest_local_path, idx="dense_file_array")
+    simple_handler.apply_file(dest_local_path)
 
     for entity, out_file in entities_out_files_dict.items():
         out_file.close()
@@ -202,6 +201,3 @@ if __name__ == "__main__":
     for path in results_local_paths:
         dest_file_gcs_name = dest_dir_name + path.split("/")[-1]
         upload_file_to_gcs(path, dest_bucket, dest_file_gcs_name)
-
-
-
