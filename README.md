@@ -7,10 +7,10 @@ for exporting [OSM planet](https://planet.openstreetmap.org/) files to [BigQuery
 
 ### Source files
 URL of the source Planet file and it's MD5 hash should be saved into following variables:
-```bash
-OSM_URL=(url_of_the_osm_planet_file)
-OSM_MD5_URL=(url_of_the_osm_planet_files_md5)
-```
+    ```bash
+    OSM_URL=(url_of_the_osm_planet_file)
+    OSM_MD5_URL=(url_of_the_osm_planet_files_md5)
+    ```
 
 ### Environment preparing
 Following steps should be performed to prepare your GCP environment: 
@@ -73,10 +73,7 @@ Don't miss to add a `roles/storage.legacyBucketReader` role to your Storage Tran
     ```bash
     COMPOSER_ENV_NAME=osm-to-bq
     gcloud composer environments create $COMPOSER_ENV_NAME \
-        --location $REGION_LOCATION \
-        --disk-size $DISK_SIZE \
-        --machine-type $MACHINE_TYPE \
-        --zone 
+        --location $REGION_LOCATION
     ```
 ### Create GKE node pools
 For resource high-consuming operations we should create 
@@ -105,7 +102,7 @@ separate [GCK node pools](https://cloud.google.com/composer/docs/how-to/using/us
     ```
 3. Save value of requested memory for `osm_to_features` into variable:
     ```
-    OSM_TO_FEATURES_POD_REQUESTED_MEMORY=150G
+    OSM_TO_FEATURES_POD_REQUESTED_MEMORY=170G
     ```
 4. Create node pool for the `osm_to_nodes_ways_relations` operation:
     ```buildoutcfg
