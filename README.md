@@ -8,9 +8,13 @@ for exporting [OSM planet](https://planet.openstreetmap.org/) files to [BigQuery
 ### Source files
 URL of the source Planet file and it's MD5 hash should be saved into following variables:
 ```
-OSM_URL=(url_of_the_osm_planet_file)
-OSM_MD5_URL=(url_of_the_osm_planet_files_md5)
+OSM_URL=https://ftp5.gwdg.de/pub/misc/openstreetmap/planet.openstreetmap.org/pbf/planet-latest.osm.pbf
+OSM_MD5_URL=https://ftp5.gwdg.de/pub/misc/openstreetmap/planet.openstreetmap.org/pbf/planet-latest.osm.pbf.md5
 ```
+There is some restrictions for the original Planet file mirror 
+that not allow to use Storage Transfer API for copying files. 
+That why we suggest to use of of the alternative [mirrors](https://wiki.openstreetmap.org/wiki/Planet.osm#Download),
+ e.g. [GWDG](https://ftp5.gwdg.de/pub/misc/openstreetmap/planet.openstreetmap.org/)
 
 ### Environment preparing
 Following steps should be performed to prepare your GCP environment: 
