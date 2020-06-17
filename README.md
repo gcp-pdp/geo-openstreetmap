@@ -148,7 +148,7 @@ separate [GCK node pools](https://cloud.google.com/composer/docs/how-to/using/us
 1. Set your Composer Environment Client Id to `COMPOSER_CLIENT_ID`.
 You can use `utils/get_client_id.py` script to get your ID:
     ```bash
-    python3 utils/get_client_id.py $PROJECT_ID $REGION_LOCATION $COMPOSER_ENV_NAME
+    COMPOSER_CLIENT_ID=$(python3 utils/get_client_id.py $PROJECT_ID $REGION_LOCATION $COMPOSER_ENV_NAME  2>&1 | tail -n1)
     ```
 2. Set your Airflow WebServer Id to `COMPOSER_WEBSERVER_ID` with the following this command:
     ```bash

@@ -46,5 +46,5 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     client_id = get_client_id(args.project_id, args.location, args.composer_environment)
-    print("Your Composer environment Client ID: {}".format(client_id))
+    print(client_id)
     sys.exit(0)
