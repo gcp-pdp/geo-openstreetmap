@@ -7,10 +7,10 @@ for exporting [OSM planet](https://planet.openstreetmap.org/) files to [BigQuery
 
 ### Source files
 URL of the source Planet file and it's MD5 hash should be saved into following variables:
-    ```bash
-    OSM_URL=(url_of_the_osm_planet_file)
-    OSM_MD5_URL=(url_of_the_osm_planet_files_md5)
-    ```
+```
+OSM_URL=(url_of_the_osm_planet_file)
+OSM_MD5_URL=(url_of_the_osm_planet_files_md5)
+```
 
 ### Environment preparing
 Following steps should be performed to prepare your GCP environment: 
@@ -89,8 +89,8 @@ separate [GCK node pools](https://cloud.google.com/composer/docs/how-to/using/us
     ```buildoutcfg
     OSM_TO_FEATURES_POOL_NAME=osm-to-features-pool
     OSM_TO_FEATURES_POOL_MACHINE_TYPE=n1-highmem-32
-    OSM_TO_FEATURES_POOL_NUM_NODES=1
-    OSM_TO_FEATURES_POOL_DISK_SIZE=800
+    OSM_TO_FEATURES_POOL_NUM_NODES=2
+    OSM_TO_FEATURES_POOL_DISK_SIZE=1200
     gcloud container node-pools create $OSM_TO_FEATURES_POOL_NAME \
         --cluster $GKE_CLUSTER_NAME \
         --project $PROJECT_ID \
@@ -107,9 +107,9 @@ separate [GCK node pools](https://cloud.google.com/composer/docs/how-to/using/us
 4. Create node pool for the `osm_to_nodes_ways_relations` operation:
     ```buildoutcfg
     OSM_TO_NODES_WAYS_FEATURES_POOL_NAME=osm-to-nodes-ways-relations-pool
-    OSM_TO_NODES_WAYS_FEATURES_POOL_MACHINE_TYPE=n1-highmem-32
+    OSM_TO_NODES_WAYS_FEATURES_POOL_MACHINE_TYPE=n1-highmem-4
     OSM_TO_NODES_WAYS_FEATURES_POOL_NUM_NODES=1
-    OSM_TO_NODES_WAYS_FEATURES_POOL_DISK_SIZE=800
+    OSM_TO_NODES_WAYS_FEATURES_POOL_DISK_SIZE=1200
     gcloud container node-pools create $OSM_TO_NODES_WAYS_FEATURES_POOL_NAME \
         --cluster $GKE_CLUSTER_NAME \
         --project $PROJECT_ID \

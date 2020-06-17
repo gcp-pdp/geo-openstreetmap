@@ -4,120 +4,79 @@ import json
 import argparse
 import os
 import errno
+import time
 
 from datetime import datetime
-
 from google.cloud import storage
-from dataclasses import dataclass
-from osmium.osm._osm import Node
-from osmium.osm._osm import Way
-from osmium.osm._osm import Relation
-from osmium.osm._osm import OSMObject
-from osmium.osm._osm import RelationMember
 
 
-@dataclass
-class OsmObjectDTO(object):
-    id: int
-    version: int
-    username: str
-    changeset: int
-    visible: bool
-    timestamp: int
-    tags = []
-
-    def __init__(self, osm_entity: OSMObject):
-        self.id = osm_entity.id
-        self.version = osm_entity.version
-        self.username = osm_entity.user
-        self.changeset = osm_entity.changeset
-        self.visible = osm_entity.visible
-        self.timestamp = int(datetime.timestamp(osm_entity.timestamp))
-        self.tags = [(tag.k, tag.v) for tag in osm_entity.tags]
-
-    def __dict__(self):
-        tags_dict = [{"key": tag[0], "value": tag[1]} for tag in self.tags]
-        return {"id": self.id, "version": self.version, "username": self.username, "changeset": self.changeset,
-                "visible": self.visible, "osm_timestamp": self.timestamp, "all_tags": tags_dict}
+def osm_entity_to_dict(osm_entity):
+    all_tags = [{"key": tag.k, "value": tag.v} for tag in osm_entity.tags]
+    return {"id": osm_entity.id, "all_tags": all_tags}
 
 
-@dataclass
-class NodeDTO(OsmObjectDTO):
-    latitude: float
-    longitude: float
-
-    def __init__(self, node_entity: Node):
-        OsmObjectDTO.__init__(self, node_entity)
-        self.latitude = node_entity.location.lat
-        self.longitude = node_entity.location.lon
-
-    def __dict__(self):
-        dict_repr = super(NodeDTO, self).__dict__()
-        dict_repr["latitude"] = self.latitude
-        dict_repr["longitude"] = self.longitude
-        return dict_repr
+def osm_entity_to_dict_full(osm_entity):
+    base_dict = osm_entity_to_dict(osm_entity)
+    base_dict.update({
+        "version": osm_entity.version,
+        "username": osm_entity.user,
+        "changeset": osm_entity.changeset,
+        "visible": osm_entity.visible,
+        "osm_timestamp": int(datetime.timestamp(osm_entity.timestamp)),
+    })
+    return base_dict
 
 
-@dataclass
-class WayDTO(OsmObjectDTO):
-    nodes: list
-
-    def __init__(self, way_entity: Way):
-        OsmObjectDTO.__init__(self, way_entity)
-        self.nodes = [node.ref for node in way_entity.nodes]
-
-    def __dict__(self):
-        dict_repr = super(WayDTO, self).__dict__()
-        dict_repr["nodes"] = [{"id": node} for node in self.nodes]
-        return dict_repr
+def osm_entity_node_dict(osm_node_entity):
+    base_dict = osm_entity_to_dict_full(osm_node_entity)
+    base_dict["latitude"] = osm_node_entity.location.lat
+    base_dict["longitude"] = osm_node_entity.location.lon
+    return base_dict
 
 
-@dataclass
-class RelationDTO(OsmObjectDTO):
-    members: list
-
-    def __init__(self, relation_entity: Relation):
-        OsmObjectDTO.__init__(self, relation_entity)
-        self.members = [RelationMemberDTO(member) for member in iter(relation_entity.members)]
-
-    def __dict__(self):
-        dict_repr = super(RelationDTO, self).__dict__()
-        dict_repr["members"] = [member.__dict__() for member in self.members]
-        return dict_repr
+def osm_entity_way_dict(osm_way_entity):
+    base_dict = osm_entity_to_dict_full(osm_way_entity)
+    base_dict["nodes"] = [{"id": node.ref} for node in osm_way_entity.nodes]
+    return base_dict
 
 
-@dataclass
-class RelationMemberDTO(object):
-    type: str
-    id: int
-    role: str
-
-    def __init__(self, relation_entity: RelationMember):
-        self.type = relation_entity.type
-        self.id = relation_entity.ref
-        self.role = relation_entity.role
-
-    def __dict__(self):
-        return {"type": self.type, "id": self.id, "role": self.role}
+def osm_entity_relation_dict(osm_relation_entity):
+    base_dict = osm_entity_to_dict_full(osm_relation_entity)
+    base_dict["members"] = [{"type": member.type, "id": member.id, "role": member.role}
+                            for member in iter(osm_relation_entity.members)]
+    return base_dict
 
 
 class CustomHandler(osmium.SimpleHandler):
 
-    def __init__(self, nodes_file):
+    def __init__(self, files_dict):
         osmium.SimpleHandler.__init__(self)
-        self.entities_out_files_dict = entities_out_files_dict
+        self.entities_out_files_dict = files_dict
+        self.processing_counter = 0
+
+        self.last_log_time = time.time()
+
+    def log_processing(self, entity_type):
+        self.processing_counter = self.processing_counter + 1
+        if self.processing_counter % 1000000 == 0:
+            logging.info(entity_type + " " + str(self.processing_counter) + " " + str(time.time() - self.last_log_time))
+            self.last_log_time = time.time()
 
     def node(self, node):
-        node_dto = NodeDTO(node)
-        entities_out_files_dict["nodes"].write(json.dumps(node_dto.__dict__()) + "\n")
+        self.log_processing("node")
+        node_dict = osm_entity_to_dict(node)
+        entities_out_files_dict["nodes"].write(json.dumps(node_dict) + "\n")
 
     def way(self, way):
-        way_dto = WayDTO(way)
-        entities_out_files_dict["ways"].write(json.dumps(way_dto.__dict__()) + "\n")
+        self.log_processing("way")
+        way_dict = osm_entity_to_dict(way)
+        entities_out_files_dict["ways"].write(json.dumps(way_dict) + "\n")
 
     def relation(self, relation):
-        relation_dto = RelationDTO(relation)
-        entities_out_files_dict["relations"].write(json.dumps(relation_dto.__dict__()) + "\n")
+        self.log_processing("relation")
+        relation_dict = osm_entity_to_dict(relation)
+        entities_out_files_dict["relations"].write(json.dumps(relation_dict) + "\n")
+
 
 def make_dir_for_file_if_not_exists(filename):
     if not os.path.exists(os.path.dirname(filename)):
@@ -126,6 +85,7 @@ def make_dir_for_file_if_not_exists(filename):
         except OSError as exc:  # Guard against race condition
             if exc.errno != errno.EEXIST:
                 raise
+
 
 def from_gcs_to_local_file(src_gcs_bucket, src_gcs_name, local_file_path):
     storage_client = storage.Client(os.environ['PROJECT_ID'])
@@ -138,6 +98,7 @@ def from_gcs_to_local_file(src_gcs_bucket, src_gcs_name, local_file_path):
     blob.download_to_filename(local_file_path)
     logging.info("Successfully downloaded gs://{}/{} to {}".format(src_gcs_bucket, src_gcs_name, local_file_path))
 
+
 def upload_file_to_gcs(filename, destination_bucket_name, destination_blob_name):
     """
     Uploads a file to a given Cloud Storage bucket and returns the public url
@@ -149,7 +110,9 @@ def upload_file_to_gcs(filename, destination_bucket_name, destination_blob_name)
     blob.upload_from_filename(
         filename,
         content_type="text/plain")
-    logging.info("Finished uploading of {} to gs://{}/{}".format(filename, destination_bucket_name, destination_blob_name))
+    logging.info(
+        "Finished uploading of {} to gs://{}/{}".format(filename, destination_bucket_name, destination_blob_name))
+
 
 def parse_uri_to_bucket_and_filename(file_path):
     """Divides file uri to bucket name and file name"""
@@ -164,6 +127,7 @@ def parse_uri_to_bucket_and_filename(file_path):
             return bucket_name, file_name
     return "", ""
 
+
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.INFO)
 
@@ -176,7 +140,8 @@ if __name__ == "__main__":
     src_bucket, src_name = parse_uri_to_bucket_and_filename(args.src_pbf_file_uri)
 
     data_dir = os.environ['DATA_DIR']
-    dest_local_path = os.environ['PROJECT_ID'] + "planet.osm.pbf"
+    dest_local_path = data_dir + "planet.osm.pbf"
+    make_dir_for_file_if_not_exists(dest_local_path)
     from_gcs_to_local_file(src_bucket, src_name, dest_local_path)
 
     entities = ["nodes", "ways", "relations"]
@@ -192,7 +157,7 @@ if __name__ == "__main__":
 
     logging.info("Creating {} files".format(str(results_local_paths)))
     simple_handler = CustomHandler(entities_out_files_dict)
-    simple_handler.apply_file(dest_local_path, idx="dense_file_array")
+    simple_handler.apply_file(dest_local_path)
 
     for entity, out_file in entities_out_files_dict.items():
         out_file.close()

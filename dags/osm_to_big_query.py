@@ -76,11 +76,9 @@ with airflow.DAG(
                                                                                     '{{ dag_run.conf.name }}')
 
     # TASK #1. osm_to_features
-    # osm_to_features_branches = [("multipolygons", ["multipolygons"]),
-    #                             ("other-features", ["other_relations", "points", "multilinestrings", "lines"])]
+    osm_to_features_branches = [("multipolygons", ["multipolygons"]),
+                                ("other-features", ["other_relations", "points", "multilinestrings", "lines"])]
 
-    osm_to_features_branches = [
-        ("all-features", ["other_relations", "points", "multilinestrings", "lines", "multipolygons"])]
     features = []
     for osm_to_features_branch in osm_to_features_branches:
         features.extend(osm_to_features_branch[1])
@@ -157,18 +155,13 @@ with airflow.DAG(
     # TASK #5.N. nodes_ways_relations_to_bq
     nodes_ways_relations_elements = ["nodes", "ways", "relations"]
     nodes_ways_relations_tasks_data = []
-    schemas = [file_to_json(local_data_dir_path + 'schemas/{}_table_schema.json'.format(element))
-               for element in nodes_ways_relations_elements]
 
-    elements_and_schemas = [(nodes_ways_relations_elements[i], schemas[i])
-                            for i in range(len(nodes_ways_relations_elements))]
+    schema = file_to_json(local_data_dir_path + 'schemas/simple_table_schema.json')
     src_nodes_ways_relations_gcs_bucket, src_nodes_ways_relations_gcs_dir = gcs_utils.parse_uri_to_bucket_and_filename(
         nodes_ways_relations_dir_gcs_uri)
     jsonl_file_names_format = src_nodes_ways_relations_gcs_dir + '{}.jsonl'
 
-    for element_and_schema in elements_and_schemas:
-        element, schema = element_and_schema
-
+    for element in nodes_ways_relations_elements:
         task_id = element + '_json_to_bq'
         source_object = jsonl_file_names_format.format(element)
         destination_dataset_table = '{}.{}'.format(bq_dataset_to_export, element)

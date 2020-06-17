@@ -1,0 +1,25 @@
+[
+  {
+    "type": "INTEGER",
+    "name": "id",
+    "description": "Object unique ID."
+  },
+  {
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "name": "all_tags",
+    "description": "Unstructured key=value attributes for this object.",
+    "fields": [
+      {
+        "type": "STRING",
+        "name": "key",
+        "description": "Attribute key."
+      },
+      {
+        "type": "STRING",
+        "name": "value",
+        "description": "Attribute value."
+      }
+    ]
+  }
+]
