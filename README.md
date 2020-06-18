@@ -3,7 +3,7 @@
 This doc describes a setup process of the [Cloud Composer](https://cloud.google.com/composer) pipeline 
 for exporting [OSM planet](https://planet.openstreetmap.org/) files to [BigQuery](https://cloud.google.com/bigquery).
 
-![pipeline_graph](./docs/graph.png)
+![pipeline_graph](./docs/OSM_Planet_file_processing.png)
 
 ### Source files
 URL of the source Planet file and it's MD5 hash should be saved into following variables:

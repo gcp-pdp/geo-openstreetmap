@@ -42,6 +42,8 @@ default_args = {
     'start_date': YESTERDAY,
 }
 
+max_bad_records_for_bq_export = 10000
+
 with airflow.DAG(
         'osm_to_big_query',
         'catchup=False',
@@ -122,6 +124,7 @@ with airflow.DAG(
             destination_project_dataset_table=destination_dataset_table,
             schema_fields=nodes_schema,
             write_disposition='WRITE_TRUNCATE',
+            max_bad_records=max_bad_records_for_bq_export,
             dag=dag)
         features_to_bq_tasks_data.append((task, feature, destination_dataset_table))
 
@@ -174,6 +177,7 @@ with airflow.DAG(
             destination_project_dataset_table=destination_dataset_table,
             schema_fields=schema,
             write_disposition='WRITE_TRUNCATE',
+            max_bad_records=max_bad_records_for_bq_export,
             dag=dag)
         nodes_ways_relations_tasks_data.append((task, element, destination_dataset_table))
 
