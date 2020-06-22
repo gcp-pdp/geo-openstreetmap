@@ -108,20 +108,20 @@ separate [GCK node pools](https://cloud.google.com/composer/docs/how-to/using/us
     ```
     OSM_TO_FEATURES_POD_REQUESTED_MEMORY=170G
     ```
-4. Create node pool for the `osm_to_nodes_ways_relations` operation:
+4. Create node pool for the `osm_to_nodes_ways_relations` and `generate_layers` operation:
     ```buildoutcfg
-    OSM_TO_NODES_WAYS_FEATURES_POOL_NAME=osm-to-nodes-ways-relations-pool
-    OSM_TO_NODES_WAYS_FEATURES_POOL_MACHINE_TYPE=n1-highmem-4
-    OSM_TO_NODES_WAYS_FEATURES_POOL_NUM_NODES=1
-    OSM_TO_NODES_WAYS_FEATURES_POOL_DISK_SIZE=1200
-    gcloud container node-pools create $OSM_TO_NODES_WAYS_FEATURES_POOL_NAME \
+    ADDITIONAL_POOL_NAME=osm-to-bq-additional-pool
+    ADDITIONAL_POOL_MACHINE_TYPE=n1-highmem-4
+    ADDITIONAL_POOL_NUM_NODES=1
+    ADDITIONAL_POOL_DISK_SIZE=1200
+    gcloud container node-pools create $ADDITIONAL_POOL_NAME \
         --cluster $GKE_CLUSTER_NAME \
         --project $PROJECT_ID \
         --zone $GKE_ZONE \
-        --machine-type $OSM_TO_NODES_WAYS_FEATURES_POOL_MACHINE_TYPE \
-        --num-nodes $OSM_TO_NODES_WAYS_FEATURES_POOL_NUM_NODES \
-        --disk-size $OSM_TO_NODES_WAYS_FEATURES_POOL_DISK_SIZE \
-        --scopes gke-default,storage-rw
+        --machine-type $ADDITIONAL_POOL_MACHINE_TYPE \
+        --num-nodes $ADDITIONAL_POOL_NUM_NODES \
+        --disk-size $ADDITIONAL_POOL_DISK_SIZE \
+        --scopes gke-default,storage-rw,bigquery
     ```
 ### Set pipeline parameters into Composer env vars 
 1. Fill `deployment/config/config.json` with the project's parameters using `deployment/config/generate_config.py` script:
@@ -139,7 +139,7 @@ separate [GCK node pools](https://cloud.google.com/composer/docs/how-to/using/us
         --osm_to_nodes_ways_relations_image=$OSM_TO_NODES_WAYS_RELATIONS_IMAGE \
         --osm_to_features_gke_pool=$OSM_TO_FEATURES_POOL_NAME \
         --osm_to_features_gke_pod_requested_memory=$OSM_TO_FEATURES_POD_REQUESTED_MEMORY \
-        --osm_to_nodes_ways_relations_gke_pool=$OSM_TO_NODES_WAYS_FEATURES_POOL_NAME \
+        --additional_gke_pool=$ADDITIONAL_POOL_NAME \
         --generate_layers_image=$GENERATE_LAYERS_IMAGE \
         --bq_dataset_to_export=$BQ_DATASET
     ```

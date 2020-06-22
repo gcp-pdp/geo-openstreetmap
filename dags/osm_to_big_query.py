@@ -27,7 +27,7 @@ osm_to_features_gke_pod_requested_memory = os.environ.get('OSM_TO_FEATURES_GKE_P
 
 nodes_ways_relations_dir_gcs_uri = os.environ.get('NODES_WAYS_RELATIONS_DIR_GCS_URI')
 osm_to_nodes_ways_relations_image = os.environ.get('OSM_TO_NODES_WAYS_RELATIONS_IMAGE')
-osm_to_nodes_ways_relations_gke_pool = os.environ.get('OSM_TO_NODES_WAYS_RELATIONS_GKE_POOL')
+additional_gke_pool = os.environ.get('ADDITIONAL_GKE_POOL')
 
 generate_layers_image = os.environ.get('GENERATE_LAYERS_IMAGE')
 test_osm_gcs_uri = os.environ.get('TEST_OSM_GCS_URI')
@@ -152,7 +152,7 @@ with airflow.DAG(
         env_vars={'PROJECT_ID': project_id, 'SRC_OSM_GCS_URI': src_osm_gcs_uri,
                   'NODES_WAYS_RELATIONS_DIR_GCS_URI': nodes_ways_relations_dir_gcs_uri},
         image=osm_to_nodes_ways_relations_image,
-        affinity=create_gke_affinity_with_pool_name(osm_to_nodes_ways_relations_gke_pool)
+        affinity=create_gke_affinity_with_pool_name(additional_gke_pool)
     )
 
     # TASK #5.N. nodes_ways_relations_to_bq
@@ -188,7 +188,8 @@ with airflow.DAG(
         namespace='default',
         image_pull_policy='Always',
         env_vars={'PROJECT_ID': project_id, 'BQ_DATASET_TO_EXPORT': bq_dataset_to_export},
-        image=generate_layers_image)
+        image=generate_layers_image,
+        affinity=create_gke_affinity_with_pool_name(additional_gke_pool))
 
     # Graph building
     branch_and_features_to_bq_tasks = {}

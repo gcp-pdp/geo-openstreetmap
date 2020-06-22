@@ -30,7 +30,7 @@ if __name__ == '__main__':
     parser.add_argument('--osm_to_features_gke_pool', help='osm_to_features GKE pool name', required=True)
     parser.add_argument('--osm_to_features_gke_pod_requested_memory', help='osm_to_features GKE POD requested memory',
                         required=True)
-    parser.add_argument('--osm_to_nodes_ways_relations_gke_pool', help='osm_to_nodes_ways_relations GKE pool name',
+    parser.add_argument('--additional_gke_pool', help='GKE pool name for additional operations',
                         required=True)
 
     parser.add_argument('--bq_dataset_to_export', help='BigQuery dataset name to export results', required=True)

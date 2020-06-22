@@ -20,6 +20,7 @@ for SQL in `find ../sql/ -type f -name '*.sql' | sort`; do
   --destination_table '${PROJECT_ID}:${BQ_DATASET_TO_EXPORT}.layers'\
   --destination_schema ../schema/layers_schema.json >/dev/null"
 
+  echo "$cmd"
   echo "$cmd" | bash
 
   ((i=i+1))

@@ -1,0 +1,65 @@
+[
+   {
+      "type":"INTEGER",
+      "name":"layer_code",
+      "description": "Geofabrik layer code. Example: 1003. Layers are hierarchical; The mask code=10xx corresponds to 'place' layers, and code=1003 corresponds to a 'village' type of place."
+   },
+   {
+      "type":"STRING",
+      "name":"layer_class",
+      "description": "Geofabrik layer class, a friendly name for layer_code. Example: 'place'"
+   },
+   {
+      "type":"STRING",
+      "name":"layer_name",
+      "description": "Geofabrik layer name, a friendly name for layer_code. Example: 'village'"
+   },
+   {
+      "type":"STRING",
+      "name":"gdal_type",
+      "description":"OpenStreetMap feature type. One of: point, line, multilinestring, multipolygon, other_relation"
+   },
+   {
+      "type":"INTEGER",
+      "name":"osm_id",
+      "description": "OSM Id taken from the id of this feature (node_id or relation_id) in the OSM database."
+   },
+   {
+      "type":"INTEGER",
+      "name":"osm_way_id",
+      "description": "OSM Way Id taken from the id of this feature (way_id) in the OSM database."
+   },
+   {
+      "type":"INTEGER",
+      "name":"osm_version",
+      "description": "Version number for this object."
+   },
+   {
+      "type":"TIMESTAMP",
+      "name":"osm_timestamp",
+      "description": "Last-modified timestamp for this object."
+   },
+   {
+      "type":"RECORD",
+      "mode":"REPEATED",
+      "name":"all_tags",
+      "description": "Unstructured key=value attributes for this object.",
+      "fields":[
+         {
+            "type":"STRING",
+            "name":"key",
+            "description": "Attribute key."
+         },
+         {
+            "type":"STRING",
+            "name":"value",
+            "description": "Attribute value."
+         }
+      ]
+   },
+   {
+      "type":"GEOGRAPHY",
+      "name":"geometry",
+      "description": "GEOGRAPHY-encoded object"
+   }
+]
