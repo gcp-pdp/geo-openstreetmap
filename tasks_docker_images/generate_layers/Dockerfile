@@ -7,5 +7,5 @@ WORKDIR /generate_layers/src
 
 RUN ["chmod", "+x", "run.sh"]
 
-CMD ./run.sh
+CMD ./run.sh $MODE
 

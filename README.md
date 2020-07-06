@@ -71,6 +71,12 @@ Don't miss to add a `roles/storage.legacyBucketReader` role to your Storage Tran
     docker build -t $GENERATE_LAYERS_IMAGE tasks_docker_images/generate_layers/
     docker push $GENERATE_LAYERS_IMAGE
     ```
+3. (FOR HISTORY MODE) Build and upload to Container Registry `osm_converter_with_history_index` Docker image:
+    ```bash
+    OSM_CONVERTER_WITH_HISTORY_INDEX_IMAGE=$IMAGE_HOSTNAME/$PROJECT_ID/osm_converter_with_history_index
+    docker build -t $OSM_CONVERTER_WITH_HISTORY_INDEX_IMAGE tasks_docker_images/osm_converter_with_history_index/
+    docker push $OSM_CONVERTER_WITH_HISTORY_INDEX_IMAGE
+    ```
 
 ### Composer setup
 1. Create the [Cloud Composer](https://cloud.google.com/composer) environment:

@@ -7,6 +7,7 @@ import errno
 import time
 import threading
 import multiprocessing
+import json
 
 from datetime import datetime
 from google.cloud import storage
@@ -29,22 +30,34 @@ def osm_entity_to_dict_full(osm_entity):
     return base_dict
 
 
-def osm_entity_node_dict(osm_node_entity):
+def osm_entity_node_dict(osm_node_entity, geojson_factory):
     base_dict = osm_entity_to_dict_full(osm_node_entity)
-    base_dict["latitude"] = osm_node_entity.location.lat
-    base_dict["longitude"] = osm_node_entity.location.lon
+    try:
+        base_dict["geometry"] = geojson_factory.create_point(osm_node_entity)
+        base_dict["latitude"] = osm_node_entity.location.lat
+        base_dict["longitude"] = osm_node_entity.location.lon
+    except Exception as e:
+        base_dict["geometry"] = None
+        base_dict["latitude"] = None
+        base_dict["longitude"] = None
     return base_dict
 
 
-def osm_entity_way_dict(osm_way_entity):
+def osm_entity_way_dict(osm_way_entity, geojson_factory):
     base_dict = osm_entity_to_dict_full(osm_way_entity)
+    try:
+        base_dict["geometry"] = geojson_factory.create_linestring(osm_way_entity)
+    except Exception as e:
+        base_dict["geometry"] = None
+
     base_dict["nodes"] = [{"id": node.ref} for node in osm_way_entity.nodes]
     return base_dict
 
 
-def osm_entity_relation_dict(osm_relation_entity):
+def osm_entity_relation_dict(osm_relation_entity, geojson_factory):
     base_dict = osm_entity_to_dict_full(osm_relation_entity)
-    base_dict["members"] = [{"type": member.type, "id": member.id, "role": member.role}
+    base_dict["geometry"] = None
+    base_dict["members"] = [{"type": member.type, "id": member.ref, "role": member.role}
                             for member in iter(osm_relation_entity.members)]
     return base_dict
 
@@ -60,6 +73,7 @@ class CustomHandler(osmium.SimpleHandler):
         self.pool_size = pool_size
         self.pool_index = pool_index
         self._lock = threading.Lock()
+        self.geo_json_factory = osmium.geom.GeoJSONFactory()
 
     def log_processing(self, entity_type):
         if self.processing_counter % 1000000 == 0:
@@ -68,20 +82,35 @@ class CustomHandler(osmium.SimpleHandler):
             self.last_log_time = time.time()
 
     def node(self, node):
-        self.process_as_base_osm_entity(node, "nodes")
+        self.processing_counter = self.processing_counter + 1
+
+        self.log_processing("nodes")
+        if self.processing_counter % self.pool_size == self.pool_index:
+            node_dict = osm_entity_node_dict(node, self.geo_json_factory)
+            self.write_to_dict("nodes", node_dict)
 
     def way(self, way):
-        self.process_as_base_osm_entity(way, "ways")
+        self.processing_counter = self.processing_counter + 1
+
+        self.log_processing("ways")
+        if self.processing_counter % self.pool_size == self.pool_index:
+            way_dict = osm_entity_way_dict(way, self.geo_json_factory)
+            self.write_to_dict("ways", way_dict)
 
     def relation(self, relation):
-        self.process_as_base_osm_entity(relation, "relations")
+        self.processing_counter = self.processing_counter + 1
+
+        self.log_processing("relations")
+        if self.processing_counter % self.pool_size == self.pool_index:
+            relation_dict = osm_entity_relation_dict(relation, self.geo_json_factory)
+            self.write_to_dict("relations", relation_dict)
 
     def process_as_base_osm_entity(self, osm_entity, entity_type):
         self.processing_counter = self.processing_counter + 1
 
         self.log_processing(entity_type)
         if self.processing_counter % self.pool_size == self.pool_index:
-            node_dict = osm_entity_to_dict(osm_entity)
+            node_dict = osm_entity_to_dict_full(osm_entity)
             self.write_to_dict(entity_type, node_dict)
 
     def write_to_dict(self, entity_type, entity_dict):
@@ -141,7 +170,7 @@ def parse_uri_to_bucket_and_filename(file_path):
 
 def process_pbf(pool_index):
     simple_handler = CustomHandler(entities_out_files_dict, pool_size, pool_index)
-    simple_handler.apply_file(dest_local_path)
+    simple_handler.apply_file(dest_local_path, locations=True)
 
 
 def run_pbf_processing_in_parallel(pool_size):
@@ -158,7 +187,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("src_pbf_file_uri", help="The source PBF file to be converted")
     parser.add_argument("dest_gcs_dir", help="URI of GCS dir to save result files")
-    parser.add_argument("--pool_size", help="Number of parallel threads for processing", default=3)
+    parser.add_argument("--num_threads", help="Number of parallel threads for processing", default="3")
 
     args = parser.parse_args()
 
@@ -182,7 +211,7 @@ if __name__ == "__main__":
 
     logging.info("Creating {} files".format(str(results_local_paths)))
 
-    pool_size = args.pool_size
+    pool_size = int(args.num_threads)
     run_pbf_processing_in_parallel(pool_size)
 
     for entity, out_file in entities_out_files_dict.items():

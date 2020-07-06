@@ -18,7 +18,6 @@ YESTERDAY = datetime.datetime.combine(
 
 project_id = os.environ.get('PROJECT_ID')
 bq_dataset_to_export = os.environ.get('BQ_DATASET_TO_EXPORT')
-src_osm_gcs_uri = os.environ.get('SRC_OSM_GCS_URI')
 
 features_dir_gcs_uri = os.environ.get('FEATURES_DIR_GCS_URI')
 osm_to_features_image = os.environ.get('OSM_TO_FEATURES_IMAGE')
@@ -45,7 +44,7 @@ default_args = {
 max_bad_records_for_bq_export = 10000
 
 with airflow.DAG(
-        'osm_to_big_query',
+        'osm_to_big_query_planet',
         'catchup=False',
         default_args=default_args,
         schedule_interval=None) as dag:
@@ -150,7 +149,8 @@ with airflow.DAG(
         namespace='default',
         image_pull_policy='Always',
         env_vars={'PROJECT_ID': project_id, 'SRC_OSM_GCS_URI': src_osm_gcs_uri,
-                  'NODES_WAYS_RELATIONS_DIR_GCS_URI': nodes_ways_relations_dir_gcs_uri},
+                  'NODES_WAYS_RELATIONS_DIR_GCS_URI': nodes_ways_relations_dir_gcs_uri,
+                  'NUM_THREADS': "3"},
         image=osm_to_nodes_ways_relations_image,
         affinity=create_gke_affinity_with_pool_name(additional_gke_pool)
     )
@@ -159,19 +159,25 @@ with airflow.DAG(
     nodes_ways_relations_elements = ["nodes", "ways", "relations"]
     nodes_ways_relations_tasks_data = []
 
+    schemas = [file_to_json(local_data_dir_path + 'schemas/{}_table_schema.json'.format(element))
+               for element in nodes_ways_relations_elements]
+
+    elements_and_schemas = [(nodes_ways_relations_elements[i], schemas[i])
+                            for i in range(len(nodes_ways_relations_elements))]
     schema = file_to_json(local_data_dir_path + 'schemas/simple_table_schema.json')
     src_nodes_ways_relations_gcs_bucket, src_nodes_ways_relations_gcs_dir = gcs_utils.parse_uri_to_bucket_and_filename(
         nodes_ways_relations_dir_gcs_uri)
     jsonl_file_names_format = src_nodes_ways_relations_gcs_dir + '{}.jsonl'
 
-    for element in nodes_ways_relations_elements:
+    for element_and_schema in elements_and_schemas:
+        element, schema = element_and_schema
         task_id = element + '_json_to_bq'
         source_object = jsonl_file_names_format.format(element)
         destination_dataset_table = '{}.{}'.format(bq_dataset_to_export, element)
 
         task = gcs_to_bq.GoogleCloudStorageToBigQueryOperator(
             task_id=task_id,
-            bucket=src_features_gcs_bucket,
+            bucket=src_nodes_ways_relations_gcs_bucket,
             source_objects=[source_object],
             source_format='NEWLINE_DELIMITED_JSON',
             destination_project_dataset_table=destination_dataset_table,
@@ -187,7 +193,9 @@ with airflow.DAG(
         name='generate-layers',
         namespace='default',
         image_pull_policy='Always',
-        env_vars={'PROJECT_ID': project_id, 'BQ_DATASET_TO_EXPORT': bq_dataset_to_export},
+        env_vars={'PROJECT_ID': project_id,
+                  'BQ_DATASET_TO_EXPORT': bq_dataset_to_export,
+                  'MODE': 'planet'},
         image=generate_layers_image,
         affinity=create_gke_affinity_with_pool_name(additional_gke_pool))
 

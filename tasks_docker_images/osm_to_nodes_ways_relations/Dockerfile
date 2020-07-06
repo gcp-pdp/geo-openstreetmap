@@ -22,4 +22,4 @@ COPY src /osm_to_nodes_ways_relations/src
 # set work dir
 WORKDIR /osm_to_nodes_ways_relations/src
 
-CMD python3 pbf_parser.py $SRC_OSM_GCS_URI $NODES_WAYS_RELATIONS_DIR_GCS_URI
+CMD python3 pbf_parser.py $SRC_OSM_GCS_URI $NODES_WAYS_RELATIONS_DIR_GCS_URI --num_threads $NUM_THREADS

@@ -27,7 +27,7 @@ def trigger_dag(data, context=None):
     # {tenant-project-id}.appspot.com
     webserver_id = os.getenv("COMPOSER_WEBSERVER_ID")
     # The name of the DAG you wish to trigger
-    dag_name = 'osm_to_big_query'
+    dag_name = os.getenv("DAG_NAME")
     webserver_url = (
         'https://'
         + webserver_id
