@@ -81,7 +81,7 @@ with airflow.DAG(
         env_vars={'PROJECT_ID': project_id,
                   'SRC_OSM_GCS_URI': src_osm_gcs_uri,
                   'CONVERTED_OSM_DIR_GCS_URI': converted_osm_dir_gcs_uri,
-                  'NUM_THREADS': "1"},
+                  'NUM_THREADS': "8"},
         image=osm_converter_with_history_index_image,
         affinity=create_gke_affinity_with_pool_name(additional_gke_pool)
     )

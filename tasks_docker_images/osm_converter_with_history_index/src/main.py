@@ -5,6 +5,7 @@ import errno
 import time
 import json
 import argparse
+import multiprocessing
 
 from datetime import datetime
 from google.cloud import storage
@@ -18,18 +19,24 @@ from gdal import gdal_handler
 
 class OsmHandler(osmium.SimpleHandler):
 
-    def __init__(self, processing_counter, logging_range_count):
+    def __init__(self, processing_counter, logging_range_count, pool_size=1, pool_index=0):
         osmium.SimpleHandler.__init__(self)
 
         self.processing_counter = processing_counter
         self.last_log_time = time.time()
         self.logging_range_count = logging_range_count
         self.current_entity_type = ""
+        self.pool_index = pool_index
+        self.pool_size = pool_size
+
+    def is_item_index_for_current_thread(self):
+        return self.processing_counter[self.current_entity_type] % self.pool_size == self.pool_index
 
     def log_processing(self):
         self.processing_counter[self.current_entity_type] = self.processing_counter[self.current_entity_type] + 1
         if self.processing_counter[self.current_entity_type] % self.logging_range_count == 0:
-            logging.info(self.current_entity_type + " " + str(self.processing_counter[self.current_entity_type])
+            logging.info(self.current_entity_type + " ({}/{}) ".format(self.pool_index+1, self.pool_size)
+                         + str(self.processing_counter[self.current_entity_type])
                          + " " + str(time.time() - self.last_log_time))
             self.last_log_time = time.time()
 
@@ -48,23 +55,32 @@ class OsmHandler(osmium.SimpleHandler):
 
 class IndexCreator(OsmHandler):
 
-    def __init__(self, osm_indexer, processing_counter, batch_size_to_commit=1000000, logging_range_count=100000):
-        OsmHandler.__init__(self, processing_counter, logging_range_count)
+    def __init__(self, osm_indexer, processing_counter,
+                 pool_size=1, pool_index=0,
+                 batch_size_to_commit=100000, logging_range_count=1000000):
+        OsmHandler.__init__(self, processing_counter, logging_range_count, pool_size, pool_index)
         self.osm_indexer = osm_indexer
         self.batch_size_to_commit = batch_size_to_commit
 
+
     def node(self, node):
         OsmHandler.node(self, node)
-        # self.osm_indexer.add_node_to_index(osm_obj_transformer.osm_entity_node_dict(node, is_simplified=True))
+        if self.is_item_index_for_current_thread():
+            self.osm_indexer.add_node_to_index(osm_obj_transformer.osm_entity_node_dict(node, is_simplified=True))
+            self.commit_if_needed()
 
     def way(self, way):
         OsmHandler.way(self, way)
-        # self.osm_indexer.add_way_to_index(osm_obj_transformer.osm_entity_way_dict(way, is_simplified=True))
+        if self.is_item_index_for_current_thread():
+            self.osm_indexer.add_way_to_index(osm_obj_transformer.osm_entity_way_dict(way, is_simplified=True))
+            self.commit_if_needed()
 
     def relation(self, relation):
         OsmHandler.relation(self, relation)
-        # self.osm_indexer.add_relation_to_index(
-        #     osm_obj_transformer.osm_entity_relation_dict(relation, is_simplified=True))
+        if self.is_item_index_for_current_thread():
+            self.osm_indexer.add_relation_to_index(
+                osm_obj_transformer.osm_entity_relation_dict(relation, is_simplified=True))
+            self.commit_if_needed()
 
     def commit_if_needed(self):
         if self.processing_counter[self.current_entity_type] % self.batch_size_to_commit == 0:
@@ -154,7 +170,7 @@ class HistoryHandler(OsmHandler):
         return way_dict, way_nodes
 
     def append_node_dict_by_id_and_timestamp(self, node_id, timestamp, nodes_list=None, nodes_map=None):
-        node_dict = osm_indexer.get_node_from_index_by_timestamp(node_id, timestamp)
+        node_dict = self.osm_indexer.get_node_from_index_by_timestamp(node_id, timestamp)
         if node_dict and osm_obj_transformer.is_node_dict_with_location(node_dict):
             if nodes_list is not None:
                 nodes_list.append(node_dict)
@@ -208,7 +224,7 @@ class HistoryHandler(OsmHandler):
                 self.append_node_dict_by_id_and_timestamp(member_id, relation_timestamp, nodes_map=relation_nodes_map)
         elif member_type == "w":
             if member_id not in relation_ways_map:
-                way_dict = osm_indexer.get_way_from_index_by_timestamp(member_id, relation_timestamp)
+                way_dict = self.osm_indexer.get_way_from_index_by_timestamp(member_id, relation_timestamp)
                 if way_dict:
                     relation_ways_map[member_id] = way_dict
                     for way_node_id in osm_obj_transformer.get_way_nodes(way_dict):
@@ -216,7 +232,7 @@ class HistoryHandler(OsmHandler):
                                                                   nodes_map=relation_nodes_map)
         elif member_type == "r":
             if member_id not in relation_relations_map:
-                relation_dict = osm_indexer.get_relation_from_index_by_timestamp(member_id, relation_timestamp)
+                relation_dict = self.osm_indexer.get_relation_from_index_by_timestamp(member_id, relation_timestamp)
                 if relation_dict:
                     relation_relations_map[member_id] = relation_dict
                     for member_type, member_id, _ in osm_obj_transformer.get_relation_members(relation_dict):
@@ -280,13 +296,46 @@ def file_name_from_path(file_path):
     else:
         return file_path
 
+def file_name_without_ext(file_name):
+    if "." in file_name:
+        return file_name.split(".")[0]
+    else:
+        return file_name
+
+
+def create_osm_index(dest_local_file_path, pool_size, pool_index):
+    index_db_file_path = file_name_without_ext(dest_local_file_path) + "_{}.sqlite.db".format(pool_index)
+    osm_indexer = osm_index.SQLiteOsmIndex(index_db_file_path)
+    osm_indexer.create()
+
+    indexing_processing_counter = {key: 0 for key in entities}
+    simple_handler = IndexCreator(osm_indexer, indexing_processing_counter,
+                                  pool_size=pool_size, pool_index=pool_index)
+    simple_handler.apply_file(dest_local_file_path)
+    osm_indexer.close()
+    return index_db_file_path, indexing_processing_counter
+
+
+def run_create_osm_index_in_parallel(dest_local_file_path, pool_size):
+    pool = multiprocessing.Pool(pool_size)
+    results = []
+    for pool_index in range(pool_size):
+        result = pool.apply_async(create_osm_index, (dest_local_file_path, pool_size, pool_index),
+                                  error_callback=lambda err: logging.info("Error: {}".format(err)))
+        results.append(result)
+    pool.close()
+    pool.join()
+
+    return [result.get() for result in results]
+
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.INFO)
+
     parser = argparse.ArgumentParser()
     parser.add_argument("src_pbf_file_uri", help="The source PBF file to be converted")
     parser.add_argument("dest_gcs_dir", help="URI of GCS dir to save result files")
-    parser.add_argument("--num_threads", help="Number of parallel threads for processing", default="3")
+    parser.add_argument("--num_threads", help="Number of parallel threads for processing", type=int, default=3)
 
     args = parser.parse_args()
 
@@ -300,39 +349,41 @@ if __name__ == "__main__":
 
     entities = ["nodes", "ways", "relations"]
 
-    index_db_file_path = dest_local_file_path + ".sqlite.db"
-    osm_indexer = osm_index.SQLiteOsmIndex(index_db_file_path)
-    osm_indexer.create()
-    indexing_processing_counter = {key: 0 for key in entities}
-    simple_handler = IndexCreator(osm_indexer, indexing_processing_counter)
-    simple_handler.apply_file(dest_local_file_path)
+    dbs_and_counters = run_create_osm_index_in_parallel(dest_local_file_path, args.num_threads)
+    if len(dbs_and_counters) > 0:
+        dbs = [db for db, counter in dbs_and_counters]
+        indexing_processing_counter = dbs_and_counters[0][1]
 
-    osm_indexer.save()
-    # dest_bucket, dest_dir_name = parse_uri_to_bucket_and_filename(args.dest_gcs_dir)
-    # upload_file_to_gcs(index_db_file_path, dest_bucket, dest_dir_name+file_name_from_path(index_db_file_path))
+        logging.info(dbs)
+        merged_index_db_file_path = file_name_without_ext(dest_local_file_path) + ".sqlite.db"
+        osm_index.merge_dbs(merged_index_db_file_path, dbs)
 
-    # entities_out_files_dict = {}
-    # results_local_paths = []
-    # for entity in entities:
-    #     path = data_dir + "{}.jsonl".format(entity)
-    #     results_local_paths.append(path)
-    #
-    #     make_dir_for_file_if_not_exists(path)
-    #     entities_out_files_dict[entity] = open(path, "w")
-    #
-    # logging.info("Creating {} files".format(str(results_local_paths)))
-    # logging.info(indexing_processing_counter)
-    #
-    # converter_processing_counter = {key: 0 for key in entities}
-    # history_handler = HistoryHandler(osm_indexer, entities_out_files_dict, data_dir,
-    #                                  converter_processing_counter, indexing_processing_counter)
-    # history_handler.apply_file(dest_local_file_path)
-    #
-    # osm_indexer.close()
-    #
-    # for entity, out_file in entities_out_files_dict.items():
-    #     out_file.close()
-    #
-    # for path in results_local_paths:
-    #     dest_file_gcs_name = dest_dir_name + file_name_from_path(path)
-    #     upload_file_to_gcs(path, dest_bucket, dest_file_gcs_name)
+        dest_bucket, dest_dir_name = parse_uri_to_bucket_and_filename(args.dest_gcs_dir)
+        upload_file_to_gcs(merged_index_db_file_path, dest_bucket, dest_dir_name+file_name_from_path(merged_index_db_file_path))
+
+        entities_out_files_dict = {}
+        results_local_paths = []
+        for entity in entities:
+            path = data_dir + "{}.jsonl".format(entity)
+            results_local_paths.append(path)
+
+            make_dir_for_file_if_not_exists(path)
+            entities_out_files_dict[entity] = open(path, "w")
+
+        logging.info("Creating {} files".format(str(results_local_paths)))
+        logging.info(indexing_processing_counter)
+
+        converter_processing_counter = {key: 0 for key in entities}
+        index_db = osm_index.SQLiteOsmIndex(merged_index_db_file_path)
+        history_handler = HistoryHandler(index_db, entities_out_files_dict, data_dir,
+                                         converter_processing_counter, indexing_processing_counter)
+        history_handler.apply_file(dest_local_file_path)
+
+        index_db.close()
+
+        for entity, out_file in entities_out_files_dict.items():
+            out_file.close()
+
+        for path in results_local_paths:
+            dest_file_gcs_name = dest_dir_name + file_name_from_path(path)
+            upload_file_to_gcs(path, dest_bucket, dest_file_gcs_name)

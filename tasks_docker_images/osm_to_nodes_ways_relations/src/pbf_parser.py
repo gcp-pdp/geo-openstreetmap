@@ -170,7 +170,7 @@ def parse_uri_to_bucket_and_filename(file_path):
 
 def process_pbf(pool_index):
     simple_handler = CustomHandler(entities_out_files_dict, pool_size, pool_index)
-    simple_handler.apply_file(dest_local_path, locations=True)
+    simple_handler.apply_file(dest_local_path)
 
 
 def run_pbf_processing_in_parallel(pool_size):

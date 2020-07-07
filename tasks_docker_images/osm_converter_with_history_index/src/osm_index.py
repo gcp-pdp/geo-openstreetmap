@@ -24,8 +24,12 @@ class SQLiteOsmIndex(OsmIndex):
 
     def __init__(self, db_file_path):
         super().__init__()
+        self.db_file_path = db_file_path
         self.sqlite3_connection = sqlite3.connect(db_file_path)
         self.osm_index_db_cursor = self.sqlite3_connection.cursor()
+
+    def get_db_file_path(self):
+        return self.db_file_path
 
     def create(self):
         self.init_nodes_table()
@@ -139,3 +143,22 @@ class SQLiteOsmIndex(OsmIndex):
 
         relation_dict["members"] = json.loads(relation_data[len(relation_data) - 1])
         return relation_dict
+
+    def merge_identical_db(self, db_file_to_merge):
+        tables = ["nodes", "ways", "relations"]
+        db_to_merge_temp_name = "dbToMerge"
+        self.sqlite3_connection.execute("ATTACH '{}' as {}".format(db_file_to_merge, db_to_merge_temp_name))
+        for table in tables:
+            self.sqlite3_connection.execute("INSERT into {} SELECT * FROM {}.{}"
+                                            .format(table, db_to_merge_temp_name, table))
+            self.sqlite3_connection.commit()
+        self.sqlite3_connection.execute("DETACH {}".format(db_to_merge_temp_name))
+
+def merge_dbs(new_db_file, db_paths):
+    new_db = SQLiteOsmIndex(new_db_file)
+    new_db.create()
+    for db_path in db_paths:
+        logging.info("Merging {} into {}".format(db_path, new_db_file))
+        new_db.merge_identical_db(db_path)
+    new_db.close()
+    return new_db_file
