@@ -30,33 +30,25 @@ def osm_entity_to_dict_full(osm_entity):
     return base_dict
 
 
-def osm_entity_node_dict(osm_node_entity, geojson_factory):
-    base_dict = osm_entity_to_dict_full(osm_node_entity)
-    try:
-        base_dict["geometry"] = geojson_factory.create_point(osm_node_entity)
+def osm_entity_node_dict(osm_node_entity):
+    base_dict = osm_entity_to_dict(osm_node_entity)
+    if osm_node_entity.location.valid():
         base_dict["latitude"] = osm_node_entity.location.lat
         base_dict["longitude"] = osm_node_entity.location.lon
-    except Exception as e:
-        base_dict["geometry"] = None
+    else:
         base_dict["latitude"] = None
         base_dict["longitude"] = None
     return base_dict
 
 
-def osm_entity_way_dict(osm_way_entity, geojson_factory):
+def osm_entity_way_dict(osm_way_entity):
     base_dict = osm_entity_to_dict_full(osm_way_entity)
-    try:
-        base_dict["geometry"] = geojson_factory.create_linestring(osm_way_entity)
-    except Exception as e:
-        base_dict["geometry"] = None
-
     base_dict["nodes"] = [{"id": node.ref} for node in osm_way_entity.nodes]
     return base_dict
 
 
-def osm_entity_relation_dict(osm_relation_entity, geojson_factory):
+def osm_entity_relation_dict(osm_relation_entity):
     base_dict = osm_entity_to_dict_full(osm_relation_entity)
-    base_dict["geometry"] = None
     base_dict["members"] = [{"type": member.type, "id": member.ref, "role": member.role}
                             for member in iter(osm_relation_entity.members)]
     return base_dict
@@ -86,7 +78,7 @@ class CustomHandler(osmium.SimpleHandler):
 
         self.log_processing("nodes")
         if self.processing_counter % self.pool_size == self.pool_index:
-            node_dict = osm_entity_node_dict(node, self.geo_json_factory)
+            node_dict = osm_entity_node_dict(node)
             self.write_to_dict("nodes", node_dict)
 
     def way(self, way):
@@ -94,7 +86,7 @@ class CustomHandler(osmium.SimpleHandler):
 
         self.log_processing("ways")
         if self.processing_counter % self.pool_size == self.pool_index:
-            way_dict = osm_entity_way_dict(way, self.geo_json_factory)
+            way_dict = osm_entity_way_dict(way)
             self.write_to_dict("ways", way_dict)
 
     def relation(self, relation):
@@ -102,7 +94,7 @@ class CustomHandler(osmium.SimpleHandler):
 
         self.log_processing("relations")
         if self.processing_counter % self.pool_size == self.pool_index:
-            relation_dict = osm_entity_relation_dict(relation, self.geo_json_factory)
+            relation_dict = osm_entity_relation_dict(relation)
             self.write_to_dict("relations", relation_dict)
 
     def process_as_base_osm_entity(self, osm_entity, entity_type):

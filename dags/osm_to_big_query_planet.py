@@ -19,14 +19,15 @@ YESTERDAY = datetime.datetime.combine(
 project_id = os.environ.get('PROJECT_ID')
 bq_dataset_to_export = os.environ.get('BQ_DATASET_TO_EXPORT')
 
-features_dir_gcs_uri = os.environ.get('FEATURES_DIR_GCS_URI')
 osm_to_features_image = os.environ.get('OSM_TO_FEATURES_IMAGE')
 osm_to_features_gke_pool = os.environ.get('OSM_TO_FEATURES_GKE_POOL')
 osm_to_features_gke_pod_requested_memory = os.environ.get('OSM_TO_FEATURES_GKE_POD_REQUESTED_MEMORY')
 
-nodes_ways_relations_dir_gcs_uri = os.environ.get('NODES_WAYS_RELATIONS_DIR_GCS_URI')
+json_results_gcs_uri = os.environ.get('JSON_RESULTS_GCS_URI')
 osm_to_nodes_ways_relations_image = os.environ.get('OSM_TO_NODES_WAYS_RELATIONS_IMAGE')
+
 additional_gke_pool = os.environ.get('ADDITIONAL_GKE_POOL')
+additional_gke_pool_pod_max_num_treads = os.environ.get('ADDITIONAL_GKE_POOL_POD_MAX_NUM_TREADS')
 
 generate_layers_image = os.environ.get('GENERATE_LAYERS_IMAGE')
 test_osm_gcs_uri = os.environ.get('TEST_OSM_GCS_URI')
@@ -95,7 +96,7 @@ with airflow.DAG(
             namespace='default',
             image_pull_policy='Always',
             env_vars={'SRC_OSM_GCS_URI': src_osm_gcs_uri,
-                      'FEATURES_DIR_GCS_URI': features_dir_gcs_uri,
+                      'FEATURES_DIR_GCS_URI': json_results_gcs_uri,
                       'LAYERS': layers},
             image=osm_to_features_image,
             resources=pod.Resources(request_memory=osm_to_features_gke_pod_requested_memory),
@@ -107,7 +108,7 @@ with airflow.DAG(
     # TASK #2.N. {}_feature_json_to_bq
     features_to_bq_tasks_data = []
     nodes_schema = file_to_json(local_data_dir_path + 'schemas/features_table_schema.json')
-    src_features_gcs_bucket, src_features_gcs_dir = gcs_utils.parse_uri_to_bucket_and_filename(features_dir_gcs_uri)
+    src_features_gcs_bucket, src_features_gcs_dir = gcs_utils.parse_uri_to_bucket_and_filename(json_results_gcs_uri)
     jsonl_file_names_format = src_features_gcs_dir + 'feature-{}.geojson.csv.jsonl'
 
     for feature in features:
@@ -149,8 +150,8 @@ with airflow.DAG(
         namespace='default',
         image_pull_policy='Always',
         env_vars={'PROJECT_ID': project_id, 'SRC_OSM_GCS_URI': src_osm_gcs_uri,
-                  'NODES_WAYS_RELATIONS_DIR_GCS_URI': nodes_ways_relations_dir_gcs_uri,
-                  'NUM_THREADS': "3"},
+                  'NODES_WAYS_RELATIONS_DIR_GCS_URI': json_results_gcs_uri,
+                  'NUM_THREADS': additional_gke_pool_pod_max_num_treads},
         image=osm_to_nodes_ways_relations_image,
         affinity=create_gke_affinity_with_pool_name(additional_gke_pool)
     )
@@ -166,7 +167,7 @@ with airflow.DAG(
                             for i in range(len(nodes_ways_relations_elements))]
     schema = file_to_json(local_data_dir_path + 'schemas/simple_table_schema.json')
     src_nodes_ways_relations_gcs_bucket, src_nodes_ways_relations_gcs_dir = gcs_utils.parse_uri_to_bucket_and_filename(
-        nodes_ways_relations_dir_gcs_uri)
+        json_results_gcs_uri)
     jsonl_file_names_format = src_nodes_ways_relations_gcs_dir + '{}.jsonl'
 
     for element_and_schema in elements_and_schemas:

@@ -2,42 +2,60 @@ from datetime import datetime
 import osmium
 
 
-def osm_obj_to_dict(osm_entity, geometry, is_simplified, with_uid):
-    base_dict = {
-        "id": osm_entity.id,
-        "version": osm_entity.version,
-        "osm_timestamp": int(datetime.timestamp(osm_entity.timestamp)),
-        "all_tags": [(tag.k, tag.v) for tag in osm_entity.tags]
-    }
-    if not is_simplified:
-        base_dict["username"] = osm_entity.user
-        base_dict["changeset"] = osm_entity.changeset
-        base_dict["visible"] = osm_entity.visible
-        base_dict["geometry"] = geometry
-    if with_uid:
-        base_dict["uid"] = osm_entity.uid
+def osm_obj_to_dict(osm_entity, geometry, is_simplified, with_uid, tags_to_bq,
+                    is_xml_attributes):
+    if is_xml_attributes:
+        base_dict = {
+            "id": osm_entity["id"],
+            "version": osm_entity["version"],
+            "osm_timestamp": int(datetime.strptime(osm_entity["timestamp"], "%Y-%m-%dT%H:%M:%S%z").timestamp())
+        }
+    else:
+        base_dict = {
+            "id": osm_entity.id,
+            "version": osm_entity.version,
+            "osm_timestamp": int(datetime.timestamp(osm_entity.timestamp))
+        }
+        if not is_simplified:
+            base_dict["username"] = osm_entity.user
+            base_dict["changeset"] = osm_entity.changeset
+            base_dict["visible"] = osm_entity.visible
+            base_dict["geometry"] = geometry
+            base_dict["all_tags"] = [{"key": tag.k, "value": tag.v} for tag in osm_entity.tags] \
+                if tags_to_bq else [(tag.k, tag.v) for tag in osm_entity.tags]
+        if with_uid:
+            base_dict["uid"] = osm_entity.uid
     return base_dict
 
 
-def osm_entity_node_dict(osm_node_entity, geometry=None, is_simplified=False, with_uid=False):
-    base_dict = osm_obj_to_dict(osm_node_entity, geometry, is_simplified, with_uid)
-    try:
-        base_dict["latitude"] = osm_node_entity.location.lat
-        base_dict["longitude"] = osm_node_entity.location.lon
-    except Exception as e:
-        base_dict["latitude"] = None
-        base_dict["longitude"] = None
+def osm_entity_node_dict(osm_node_entity, geometry=None, is_simplified=False, with_uid=False,
+                         tags_to_bq=True, is_xml_attributes=False):
+    base_dict = osm_obj_to_dict(osm_node_entity, geometry, is_simplified, with_uid, tags_to_bq, is_xml_attributes)
+    if is_xml_attributes:
+        base_dict.update({
+            "latitude": osm_node_entity["latitude"] if "latitude" in osm_node_entity else None,
+            "longitude": osm_node_entity["longitude"] if "longitude" in osm_node_entity else None
+        })
+    else:
+        try:
+            base_dict["latitude"] = osm_node_entity.location.lat
+            base_dict["longitude"] = osm_node_entity.location.lon
+        except Exception as e:
+            base_dict["latitude"] = None
+            base_dict["longitude"] = None
     return base_dict
 
 
-def osm_entity_way_dict(osm_way_entity, geometry=None, is_simplified=False, with_uid=False):
-    base_dict = osm_obj_to_dict(osm_way_entity, geometry, is_simplified, with_uid)
+def osm_entity_way_dict(osm_way_entity, geometry=None, is_simplified=False, with_uid=False, tags_to_bq=True,
+                        is_xml_attributes=False):
+    base_dict = osm_obj_to_dict(osm_way_entity, geometry, is_simplified, with_uid, tags_to_bq, is_xml_attributes)
     base_dict["nodes"] = [node.ref for node in osm_way_entity.nodes]
     return base_dict
 
 
-def osm_entity_relation_dict(osm_relation_entity, geometry=None, is_simplified=False,  with_uid=False):
-    base_dict = osm_obj_to_dict(osm_relation_entity, geometry, is_simplified, with_uid)
+def osm_entity_relation_dict(osm_relation_entity, geometry=None, is_simplified=False,  with_uid=False, tags_to_bq=True,
+                             is_xml_attributes=False):
+    base_dict = osm_obj_to_dict(osm_relation_entity, geometry, is_simplified, with_uid, tags_to_bq, is_xml_attributes)
     base_dict["members"] = [(member.type, member.ref, member.role) for member in iter(osm_relation_entity.members)]
     return base_dict
 

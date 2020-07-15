@@ -17,6 +17,8 @@ RUN pip3 install --upgrade google-cloud-storage
 RUN pip3 install osmium
 # install guppy3 (memory profiler)
 RUN pip3 install guppy3
+# install psutil
+RUN pip install psutil
 
 # set env vars
 ENV DATA_DIR /osm_converter_with_history_index/data/

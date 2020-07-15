@@ -27,7 +27,7 @@ OSM_TRANSFER_INDEX_FILE_NAME = OSM_TRANSFER_INDEX_FILE_NAME_BASE + OSM_TRANSFER_
 project_id = os.environ.get('PROJECT_ID')
 osm_url = os.environ.get('OSM_URL')
 osm_md5_url = os.environ.get('OSM_MD5_URL')
-transfer_index_files_dir_gcs_uri = os.environ.get('TRANSFER_INDEX_FILES_DIR_GCS_URI')
+transfer_index_files_dir_gcs_uri = os.environ.get('TRANSFER_INDEX_FILES_GCS_URI')
 gcs_transfer_bucket = os.environ.get('GCS_TRANSFER_BUCKET')
 
 default_args = {

@@ -1,20 +1,31 @@
 # OSM to BigQuery 
 
 This doc describes a setup process of the [Cloud Composer](https://cloud.google.com/composer) pipeline 
-for exporting [OSM planet](https://planet.openstreetmap.org/) files to [BigQuery](https://cloud.google.com/bigquery).
+for exporting [OSM planet](https://planet.openstreetmap.org/) or [OSM history](https://planet.openstreetmap.org/planet/full-history/) files to [BigQuery](https://cloud.google.com/bigquery).
 
 ![pipeline_graph](./docs/OSM_Planet_file_processing.png)
 
 ### Source files
 URL of the source Planet file and it's MD5 hash should be saved into following variables:
+   
+- for **Planet** file
+
 ```
 OSM_URL=https://ftp5.gwdg.de/pub/misc/openstreetmap/planet.openstreetmap.org/pbf/planet-latest.osm.pbf
 OSM_MD5_URL=https://ftp5.gwdg.de/pub/misc/openstreetmap/planet.openstreetmap.org/pbf/planet-latest.osm.pbf.md5
 ```
-There is some restrictions for the original Planet file mirror 
+
+- for **History** file
+```
+OSM_URL=https://ftp5.gwdg.de/pub/misc/openstreetmap/planet.openstreetmap.org/pbf/full-history/history-latest.osm.pbf
+OSM_MD5_URL=https://ftp5.gwdg.de/pub/misc/openstreetmap/planet.openstreetmap.org/pbf/full-history/history-latest.osm.pbf.md5
+```
+
+There is some restrictions for the original files mirror 
 that not allow to use Storage Transfer API for copying files. 
 That why we suggest to use of of the alternative [mirrors](https://wiki.openstreetmap.org/wiki/Planet.osm#Download),
  e.g. [GWDG](https://ftp5.gwdg.de/pub/misc/openstreetmap/planet.openstreetmap.org/)
+
 
 ### Environment preparing
 Following steps should be performed to prepare your GCP environment: 
@@ -53,25 +64,30 @@ Don't miss to add a `roles/storage.legacyBucketReader` role to your Storage Tran
     ```bash
     IMAGE_HOSTNAME=(image_hostname) # e.g. `gcr.io` to hosts images in data centers in the United States
     ```
-2. Build and upload to Container Registry `osm_to_features` Docker image: 
-    ```bash
-    OSM_TO_FEATURES_IMAGE=$IMAGE_HOSTNAME/$PROJECT_ID/osm_to_features
-    docker build -t $OSM_TO_FEATURES_IMAGE tasks_docker_images/osm_to_features/
-    docker push $OSM_TO_FEATURES_IMAGE
-    ```
-3. Build and upload to Container Registry `osm_to_nodes_ways_relations` Docker image:
-    ```bash
-    OSM_TO_NODES_WAYS_RELATIONS_IMAGE=$IMAGE_HOSTNAME/$PROJECT_ID/osm_to_nodes_ways_relations
-    docker build -t $OSM_TO_NODES_WAYS_RELATIONS_IMAGE tasks_docker_images/osm_to_nodes_ways_relations/
-    docker push $OSM_TO_NODES_WAYS_RELATIONS_IMAGE
-    ```
-3. Build and upload to Container Registry `generate_layers` Docker image:
+2. Build and upload to Container Registry `generate_layers` Docker image:
     ```bash
     GENERATE_LAYERS_IMAGE=$IMAGE_HOSTNAME/$PROJECT_ID/generate_layers
     docker build -t $GENERATE_LAYERS_IMAGE tasks_docker_images/generate_layers/
     docker push $GENERATE_LAYERS_IMAGE
     ```
-3. (FOR HISTORY MODE) Build and upload to Container Registry `osm_converter_with_history_index` Docker image:
+#### Planet file processing images
+This images should be uploaded only if you are working with a **Planet** file
+1. Build and upload to Container Registry `osm_to_features` Docker image: 
+    ```bash
+    OSM_TO_FEATURES_IMAGE=$IMAGE_HOSTNAME/$PROJECT_ID/osm_to_features
+    docker build -t $OSM_TO_FEATURES_IMAGE tasks_docker_images/osm_to_features/
+    docker push $OSM_TO_FEATURES_IMAGE
+    ```
+2. Build and upload to Container Registry `osm_to_nodes_ways_relations` Docker image:
+    ```bash
+    OSM_TO_NODES_WAYS_RELATIONS_IMAGE=$IMAGE_HOSTNAME/$PROJECT_ID/osm_to_nodes_ways_relations
+    docker build -t $OSM_TO_NODES_WAYS_RELATIONS_IMAGE tasks_docker_images/osm_to_nodes_ways_relations/
+    docker push $OSM_TO_NODES_WAYS_RELATIONS_IMAGE
+    ```
+
+#### History file processing images
+This images should be uploaded only if you are working with a **History** file
+1. Build and upload to Container Registry `osm_converter_with_history_index` Docker image:
     ```bash
     OSM_CONVERTER_WITH_HISTORY_INDEX_IMAGE=$IMAGE_HOSTNAME/$PROJECT_ID/osm_converter_with_history_index
     docker build -t $OSM_CONVERTER_WITH_HISTORY_INDEX_IMAGE tasks_docker_images/osm_converter_with_history_index/
@@ -95,7 +111,36 @@ separate [GCK node pools](https://cloud.google.com/composer/docs/how-to/using/us
     GKE_CLUSTER_NAME=$(echo $GKE_CLUSTER_FULL_NAME | awk -F/ '{print $6}')
     GKE_ZONE=$(echo $GKE_CLUSTER_FULL_NAME | awk -F/ '{print $4}')
     ```
-2. Create node pool for the `osm_to_features` operation:
+2. Create node pool for the `osm_to_nodes_ways_relations` and `generate_layers` operation:
+    
+    - Set pool parameters for **Planet** file:
+    ```
+    ADDITIONAL_POOL_NUM_CORES=4
+    ADDITIONAL_POOL_DISK_SIZE=1200
+    ```
+    or for **History** file:
+    ```
+    ADDITIONAL_POOL_NUM_CORES=32
+    ADDITIONAL_POOL_DISK_SIZE=2000
+    ```
+    - Set other parameters and create GKE Pool
+    ```buildoutcfg
+    ADDITIONAL_POOL_NAME=osm-to-bq-additional-pool
+    ADDITIONAL_POOL_MACHINE_TYPE=n1-highmem-$ADDITIONAL_POOL_NUM_CORES
+    ADDITIONAL_GKE_POOL_POD_MAX_NUM_TREADS=$((ADDITIONAL_POOL_NUM_CORES/2))
+    ADDITIONAL_POOL_NUM_NODES=1
+    gcloud container node-pools create $ADDITIONAL_POOL_NAME \
+        --cluster $GKE_CLUSTER_NAME \
+        --project $PROJECT_ID \
+        --zone $GKE_ZONE \
+        --machine-type $ADDITIONAL_POOL_MACHINE_TYPE \
+        --num-nodes $ADDITIONAL_POOL_NUM_NODES \
+        --disk-size $ADDITIONAL_POOL_DISK_SIZE \
+        --scopes gke-default,storage-rw,bigquery
+    ```
+#### Planet file GKE node pool for features POD 
+This GKE pool should be created only if you are working with a **Planet** file
+1. Create node pool for the `osm_to_features` operation:
     ```buildoutcfg
     OSM_TO_FEATURES_POOL_NAME=osm-to-features-pool
     OSM_TO_FEATURES_POOL_MACHINE_TYPE=n1-highmem-32
@@ -110,25 +155,11 @@ separate [GCK node pools](https://cloud.google.com/composer/docs/how-to/using/us
         --disk-size $OSM_TO_FEATURES_POOL_DISK_SIZE \
         --scopes gke-default,storage-rw
     ```
-3. Save value of requested memory for `osm_to_features` into variable:
+2. Save value of requested memory for `osm_to_features` into variable:
     ```
     OSM_TO_FEATURES_POD_REQUESTED_MEMORY=170G
     ```
-4. Create node pool for the `osm_to_nodes_ways_relations` and `generate_layers` operation:
-    ```buildoutcfg
-    ADDITIONAL_POOL_NAME=osm-to-bq-additional-pool
-    ADDITIONAL_POOL_MACHINE_TYPE=n1-highmem-4
-    ADDITIONAL_POOL_NUM_NODES=1
-    ADDITIONAL_POOL_DISK_SIZE=1200
-    gcloud container node-pools create $ADDITIONAL_POOL_NAME \
-        --cluster $GKE_CLUSTER_NAME \
-        --project $PROJECT_ID \
-        --zone $GKE_ZONE \
-        --machine-type $ADDITIONAL_POOL_MACHINE_TYPE \
-        --num-nodes $ADDITIONAL_POOL_NUM_NODES \
-        --disk-size $ADDITIONAL_POOL_DISK_SIZE \
-        --scopes gke-default,storage-rw,bigquery
-    ```
+
 ### Set pipeline parameters into Composer env vars 
 1. Fill `deployment/config/config.json` with the project's parameters using `deployment/config/generate_config.py` script:
     ```
@@ -138,14 +169,14 @@ separate [GCK node pools](https://cloud.google.com/composer/docs/how-to/using/us
         --osm_url=$OSM_URL \
         --osm_md5_url=$OSM_MD5_URL \
         --gcs_transfer_bucket=$TRANSFER_BUCKET_NAME \
-        --features_dir_gcs_uri=gs://$WORK_BUCKET_NAME/features/ \
-        --nodes_ways_relations_dir_gcs_uri=gs://$WORK_BUCKET_NAME/nodes_ways_relations/ \
-        --transfer_index_files_dir_gcs_uri=gs://$WORK_BUCKET_NAME/gsc_transfer_index/ \
+        --json_results_gcs_uri=gs://$WORK_BUCKET_NAME/results_jsonl/ \
+        --transfer_index_files_gcs_uri=gs://$WORK_BUCKET_NAME/gsc_transfer_index/ \
         --osm_to_features_image=$OSM_TO_FEATURES_IMAGE \
         --osm_to_nodes_ways_relations_image=$OSM_TO_NODES_WAYS_RELATIONS_IMAGE \
         --osm_to_features_gke_pool=$OSM_TO_FEATURES_POOL_NAME \
         --osm_to_features_gke_pod_requested_memory=$OSM_TO_FEATURES_POD_REQUESTED_MEMORY \
         --additional_gke_pool=$ADDITIONAL_POOL_NAME \
+        --additional_gke_pool_pod_max_num_treads=$ADDITIONAL_GKE_POOL_POD_MAX_NUM_TREADS \
         --generate_layers_image=$GENERATE_LAYERS_IMAGE \
         --bq_dataset_to_export=$BQ_DATASET
     ```
@@ -169,6 +200,16 @@ You can use `utils/get_client_id.py` script to get your ID:
         cut -d '.' -f1)
     ```
 3. Create a [Cloud Function](https://cloud.google.com/functions) that will trigger `osm-to-bq` after source OSM file transfer:
+- Main DAG name for the **Planet** file mode:
+    ```
+    DAG_NAME=osm_to_big_query_planet
+    ```
+- Main DAG name for **History** file mode:
+    ```
+    DAG_NAME=osm_to_big_query_history
+    ```
+    ```
+    DAGS_PATH='dags/osm_to_big_query_history.py dags/transfer_src_file.py  dags/*/'
     ```bash
     TRIGGER_FUNCTION_NAME=trigger_osm_to_big_query_dg_gcf
     gcloud functions deploy $TRIGGER_FUNCTION_NAME \
@@ -177,17 +218,25 @@ You can use `utils/get_client_id.py` script to get your ID:
         --runtime python37 \
         --trigger-resource $TRANSFER_BUCKET_NAME \
         --trigger-event google.storage.object.finalize \
-        --set-env-vars COMPOSER_CLIENT_ID=$COMPOSER_CLIENT_ID,COMPOSER_WEBSERVER_ID=$COMPOSER_WEBSERVER_ID
+        --set-env-vars COMPOSER_CLIENT_ID=$COMPOSER_CLIENT_ID,COMPOSER_WEBSERVER_ID=$COMPOSER_WEBSERVER_ID,DAG_NAME=$DAG_NAME
     ```
 
 ### Uploading DAGs and running
 1. Upload DAG's and it's dependency files to the environment GCS:
-    ```bash
-    DAGS_PATH=dags/*
-    for DAG_ELEMENT in $DAGS_PATH; do
-      deployment/upload_dags_files.sh $DAG_ELEMENT $COMPOSER_ENV_NAME $REGION_LOCATION
-    done  
-    ```
+- Files list for the **Planet** file mode:
+```
+DAGS_PATH='dags/osm_to_big_query_planet.py dags/transfer_src_file.py  dags/*/'
+```
+- Files list for the **History** file mode:
+```
+DAGS_PATH='dags/osm_to_big_query_history.py dags/transfer_src_file.py  dags/*/'
+```
+- Upload files:
+```bash
+for DAG_ELEMENT in $DAGS_PATH; do
+  deployment/upload_dags_files.sh $DAG_ELEMENT $COMPOSER_ENV_NAME $REGION_LOCATION
+done  
+```
 After you upload all DAG files and it's dependencies, the pipeline will automatically start according to `start_date` and `schedule_intervals` parameters that are set in the DAG files.
 
 ### Inspecting

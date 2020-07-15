@@ -27,9 +27,17 @@ class SQLiteOsmIndex(OsmIndex):
         self.db_file_path = db_file_path
         self.sqlite3_connection = sqlite3.connect(db_file_path)
         self.osm_index_db_cursor = self.sqlite3_connection.cursor()
+        self.query_time = 0
+        self.query_counter = 0
 
     def get_db_file_path(self):
         return self.db_file_path
+
+    def get_query_time(self):
+        return self.query_time
+
+    def get_query_counter(self):
+        return self.query_counter
 
     def create(self):
         self.init_nodes_table()
@@ -65,10 +73,16 @@ class SQLiteOsmIndex(OsmIndex):
                          ON relations (id, version)''')
         self.save()
 
+    def execute_query(self, query, values=None):
+        if values:
+            self.osm_index_db_cursor.execute(query, values)
+        else:
+            self.osm_index_db_cursor.execute(query)
+
     def add_values_to_sqlite_table(self, table_name, values):
         placeholders = ",".join(["?"] * len(values))
         query = "INSERT INTO {} VALUES ({})".format(table_name, placeholders)
-        self.osm_index_db_cursor.execute(query, values)
+        self.execute_query(query, values)
 
     def get_id_version_timestamp_all_tags_from_osm_obj(self, osm_obj):
         return str(osm_obj["id"]), str(osm_obj["version"]), \
@@ -84,17 +98,17 @@ class SQLiteOsmIndex(OsmIndex):
     def add_way_to_index(self, way_dict):
         osm_id, ver, timestamp, all_tags = self.get_id_version_timestamp_all_tags_from_osm_obj(way_dict)
         node_ids = json.dumps(way_dict["nodes"])
-        self.add_values_to_sqlite_table("ways", [osm_id, ver, timestamp, all_tags, node_ids])
+        # self.add_values_to_sqlite_table("ways", [osm_id, ver, timestamp, all_tags, node_ids])
 
     def add_relation_to_index(self, relation_dict):
         osm_id, ver, timestamp, all_tags = self.get_id_version_timestamp_all_tags_from_osm_obj(relation_dict)
         members = json.dumps(relation_dict["members"])
-        self.add_values_to_sqlite_table("relations", [osm_id, ver, timestamp, all_tags, members])
+        # self.add_values_to_sqlite_table("relations", [osm_id, ver, timestamp, all_tags, members])
 
     def get_row_from_index_by_timestamp(self, table_name, id, timestamp):
         query = "SELECT * FROM {} table_name WHERE id={} AND osm_timestamp<{} ORDER BY osm_timestamp DESC" \
             .format(table_name, id, timestamp)
-        self.osm_index_db_cursor.execute(query)
+        self.execute_query(query)
         return self.osm_index_db_cursor.fetchone()
 
     def get_node_from_index_by_timestamp(self, node_id, timestamp):
@@ -147,12 +161,12 @@ class SQLiteOsmIndex(OsmIndex):
     def merge_identical_db(self, db_file_to_merge):
         tables = ["nodes", "ways", "relations"]
         db_to_merge_temp_name = "dbToMerge"
-        self.sqlite3_connection.execute("ATTACH '{}' as {}".format(db_file_to_merge, db_to_merge_temp_name))
+        self.execute_query("ATTACH '{}' as {}".format(db_file_to_merge, db_to_merge_temp_name))
         for table in tables:
-            self.sqlite3_connection.execute("INSERT into {} SELECT * FROM {}.{}"
+            self.execute_query("INSERT into {} SELECT * FROM {}.{}"
                                             .format(table, db_to_merge_temp_name, table))
             self.sqlite3_connection.commit()
-        self.sqlite3_connection.execute("DETACH {}".format(db_to_merge_temp_name))
+        self.execute_query("DETACH {}".format(db_to_merge_temp_name))
 
 def merge_dbs(new_db_file, db_paths):
     new_db = SQLiteOsmIndex(new_db_file)

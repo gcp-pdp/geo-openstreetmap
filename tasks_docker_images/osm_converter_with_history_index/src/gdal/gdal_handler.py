@@ -16,8 +16,11 @@ class GDALHandler(object):
     def osm_to_geojson(self, src_osm_filename, entity_type, result_ids):
         def geometry_from_geojson_features(geojson_features, feature_index):
             return geojson_features[feature_index]["properties"]["geometry"]
-
-        logging.info("Working with {}".format(src_osm_filename))
+        try:
+            file_size = os.path.getsize(src_osm_filename)
+        except Exception:
+            file_size = -1
+        logging.info("Working with {}, size: {}".format(src_osm_filename, str(file_size)))
         start = time.time()
 
         id_geometry_map = {}

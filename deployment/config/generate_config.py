@@ -15,12 +15,10 @@ if __name__ == '__main__':
 
     parser.add_argument('--gcs_transfer_bucket', help='GCS bucket to make transferring source file to project\'s GCS',
                         required=True)
-    parser.add_argument('--transfer_index_files_dir_gcs_uri', help='GCS URI to Storage Transfer index file',
+    parser.add_argument('--transfer_index_files_gcs_uri', help='GCS URI to Storage Transfer index file',
                         required=True)
 
-    parser.add_argument('--features_dir_gcs_uri', help='GCS URI to store features JSON files', required=True)
-    parser.add_argument('--nodes_ways_relations_dir_gcs_uri', help='GCS URI to store nodes/ways/relations JSON files',
-                        required=True)
+    parser.add_argument('--json_results_gcs_uri', help='GCS URI to store results JSON files', required=True)
 
     parser.add_argument('--osm_to_features_image', help='osm_to_features image name', required=True)
     parser.add_argument('--osm_to_nodes_ways_relations_image', help='osm_to_nodes_ways_relations image name',
@@ -32,11 +30,19 @@ if __name__ == '__main__':
                         required=True)
     parser.add_argument('--additional_gke_pool', help='GKE pool name for additional operations',
                         required=True)
+    parser.add_argument('--additional_gke_pool_pod_max_num_treads',
+                        help='Maximum numbers of threads that can be used on the additional GKE pool pod',
+                        required=True)
 
     parser.add_argument('--bq_dataset_to_export', help='BigQuery dataset name to export results', required=True)
 
     args = parser.parse_args()
+    args_filtered = {}
+    for k, v in vars(args).items():
+        if v:
+            print(v)
+            args_filtered[k] = v
 
     with open(args.config_file, 'w') as fp:
-        json.dump(vars(args), fp, indent=4)
+        json.dump(args_filtered, fp, indent=4)
 

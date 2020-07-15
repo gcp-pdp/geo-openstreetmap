@@ -21,8 +21,9 @@ osm_to_features_gke_pod_requested_memory = os.environ.get('OSM_TO_FEATURES_GKE_P
 # nodes_ways_relations_dir_gcs_uri = os.environ.get('NODES_WAYS_RELATIONS_DIR_GCS_URI')
 # osm_to_nodes_ways_relations_image = os.environ.get('OSM_TO_NODES_WAYS_RELATIONS_IMAGE')
 osm_converter_with_history_index_image = "gcr.io/gcp-pdp-osm-dev/osm_converter_with_history_index"
-converted_osm_dir_gcs_uri="gs://gcp-pdp-osm-dev-work-historyeast1/converted/"
+converted_osm_dir_gcs_uri = "gs://gcp-pdp-osm-dev-work-historyeast1/converted/"
 additional_gke_pool = os.environ.get('ADDITIONAL_GKE_POOL')
+additional_gke_pool_pod_max_num_treads = os.environ.get('ADDITIONAL_GKE_POOL_POD_MAX_NUM_TREADS')
 
 generate_layers_image = os.environ.get('GENERATE_LAYERS_IMAGE')
 test_osm_gcs_uri = os.environ.get('TEST_OSM_GCS_URI')
@@ -81,7 +82,7 @@ with airflow.DAG(
         env_vars={'PROJECT_ID': project_id,
                   'SRC_OSM_GCS_URI': src_osm_gcs_uri,
                   'CONVERTED_OSM_DIR_GCS_URI': converted_osm_dir_gcs_uri,
-                  'NUM_THREADS': "8"},
+                  'NUM_THREADS': additional_gke_pool_pod_max_num_treads},
         image=osm_converter_with_history_index_image,
         affinity=create_gke_affinity_with_pool_name(additional_gke_pool)
     )

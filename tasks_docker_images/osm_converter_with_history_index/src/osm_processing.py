@@ -1,7 +1,12 @@
 import json
+import hashlib
 
 def generate_complex_id(obj_dict):
     return "{}_{}".format(obj_dict["id"], obj_dict["version"])
+
+
+def get_uniformly_shard_index_from_id(id, num_shards):
+    return int(hashlib.md5(str(id).encode("utf-8")).hexdigest(), 16) % num_shards
 
 
 class IdManager(object):
@@ -66,11 +71,11 @@ class IdManager(object):
         return local_id_map
 
     def get_simplified_id_and_original_id_maps(self):
-        result_relations_ids_map = {simple_id: complex_id.split("_")[0]
+        result_relations_ids_map = {simple_id: int(complex_id.split("_")[0])
                                     for complex_id, simple_id in self.relation_id_map.items()}
-        result_ways_ids_map = {simple_id: complex_id.split("_")[0]
+        result_ways_ids_map = {simple_id: int(complex_id.split("_")[0])
                                for complex_id, simple_id in self.way_id_map.items()}
-        result_nodes_ids_map = {simple_id: complex_id.split("_")[0]
+        result_nodes_ids_map = {simple_id: int(complex_id.split("_")[0])
                                 for complex_id, simple_id in self.node_id_map.items()}
         return result_nodes_ids_map, result_ways_ids_map, result_relations_ids_map
 
