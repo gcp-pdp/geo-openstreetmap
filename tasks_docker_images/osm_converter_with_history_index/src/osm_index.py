@@ -1,10 +1,6 @@
 import sqlite3
 import json
 import logging
-import time
-
-logging.getLogger().setLevel(logging.INFO)
-
 
 class OsmIndex(object):
     def __init__(self):
@@ -91,19 +87,19 @@ class SQLiteOsmIndex(OsmIndex):
 
     def add_node_to_index(self, node_dict):
         osm_id, ver, timestamp, all_tags = self.get_id_version_timestamp_all_tags_from_osm_obj(node_dict)
-        lon = node_dict["longitude"]
-        lat = node_dict["latitude"]
+        lon = node_dict["longitude"] if "longitude" in node_dict else None
+        lat = node_dict["latitude"] if "latitude" in node_dict else None
         self.add_values_to_sqlite_table("nodes", [osm_id, ver, timestamp, all_tags, lon, lat])
 
     def add_way_to_index(self, way_dict):
         osm_id, ver, timestamp, all_tags = self.get_id_version_timestamp_all_tags_from_osm_obj(way_dict)
         node_ids = json.dumps(way_dict["nodes"])
-        # self.add_values_to_sqlite_table("ways", [osm_id, ver, timestamp, all_tags, node_ids])
+        self.add_values_to_sqlite_table("ways", [osm_id, ver, timestamp, all_tags, node_ids])
 
     def add_relation_to_index(self, relation_dict):
         osm_id, ver, timestamp, all_tags = self.get_id_version_timestamp_all_tags_from_osm_obj(relation_dict)
         members = json.dumps(relation_dict["members"])
-        # self.add_values_to_sqlite_table("relations", [osm_id, ver, timestamp, all_tags, members])
+        self.add_values_to_sqlite_table("relations", [osm_id, ver, timestamp, all_tags, members])
 
     def get_row_from_index_by_timestamp(self, table_name, id, timestamp):
         query = "SELECT * FROM {} table_name WHERE id={} AND osm_timestamp<{} ORDER BY osm_timestamp DESC" \
@@ -168,9 +164,11 @@ class SQLiteOsmIndex(OsmIndex):
             self.sqlite3_connection.commit()
         self.execute_query("DETACH {}".format(db_to_merge_temp_name))
 
-def merge_dbs(new_db_file, db_paths):
+
+def merge_dbs(new_db_file, db_paths, db_exists):
     new_db = SQLiteOsmIndex(new_db_file)
-    new_db.create()
+    if not db_exists:
+        new_db.create()
     for db_path in db_paths:
         logging.info("Merging {} into {}".format(db_path, new_db_file))
         new_db.merge_identical_db(db_path)

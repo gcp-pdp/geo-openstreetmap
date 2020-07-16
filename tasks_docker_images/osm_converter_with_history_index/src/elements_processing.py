@@ -1,6 +1,7 @@
 import json
 import hashlib
 
+
 def generate_complex_id(obj_dict):
     return "{}_{}".format(obj_dict["id"], obj_dict["version"])
 
@@ -88,7 +89,7 @@ class IdManager(object):
 
 class BatchManager(object):
 
-    def __init__(self, ways_batch_size, entities_number):
+    def __init__(self, gdal_batch_size, entities_number):
         self.entities_number = entities_number
 
         self.nodes_batch = {}
@@ -96,7 +97,7 @@ class BatchManager(object):
         self.all_relations_batch = {}
         self.main_relation_batch = {}
         self.ways_batch_counter = 0
-        self.ways_batch_size = ways_batch_size
+        self.gdal_batch_size = gdal_batch_size
 
         self.id_manager = IdManager()
 
@@ -163,11 +164,11 @@ class BatchManager(object):
 
     def generate_batch_osm_file_name(self, work_dir, current_entity_type, current_index):
         batch_end = current_index
-        batch_start = batch_end - self.ways_batch_size
+        batch_start = batch_end - self.gdal_batch_size
         return work_dir + '{}_{}_{}.osm'.format(current_entity_type, batch_start, batch_end)
 
     def is_full(self, entity_type, processing_counter):
-        return self.ways_batch_counter >= self.ways_batch_size \
+        return self.ways_batch_counter >= self.gdal_batch_size \
                or processing_counter[entity_type] >= self.entities_number[entity_type]
 
     def reset(self):
