@@ -6,6 +6,7 @@ import elements_transformer
 import elements_processing
 
 from xml.sax import handler
+import psutil
 
 
 class OsmParser(osmium.SimpleHandler):
@@ -20,40 +21,31 @@ class OsmParser(osmium.SimpleHandler):
         self.pool_index = pool_index
         self.pool_size = pool_size
 
-    def is_item_index_for_current_thread(self):
+    def is_item_index_for_current_pool_index(self):
         return self.processing_counter[self.current_entity_type] % self.pool_size == self.pool_index
 
     def log_processing(self):
         self.processing_counter[self.current_entity_type] = self.processing_counter[self.current_entity_type] + 1
         if self.processing_counter[self.current_entity_type] % self.logging_range_count == 0:
+            virtual_memory = psutil.virtual_memory()
             logging.info(self.current_entity_type + " ({}/{}) ".format(self.pool_index + 1, self.pool_size)
                          + str(self.processing_counter[self.current_entity_type])
-                         + " " + str(time.time() - self.last_log_time))
+                         + " " + str(time.time() - self.last_log_time)
+                         + " Memory: usage {}, used {} MB"
+                         .format(virtual_memory.percent, virtual_memory.used / (1024 * 1024)))
             self.last_log_time = time.time()
 
     def node(self, node):
         self.current_entity_type = "nodes"
         self.log_processing()
-        self.on_node_element(node)
 
     def way(self, way):
         self.current_entity_type = "ways"
         self.log_processing()
-        self.on_way_element(way)
 
     def relation(self, relation):
         self.current_entity_type = "relations"
         self.log_processing()
-        self.on_relation_element(relation)
-
-    def on_node_element(self, node):
-        pass
-
-    def on_way_element(self, way):
-        pass
-
-    def on_relation_element(self, relation):
-        pass
 
 
 class IndexCreatorWithXmlParser(handler.ContentHandler):
@@ -89,7 +81,7 @@ class IndexCreatorWithXmlParser(handler.ContentHandler):
         if self.processing_counter[self.current_entity_type] % self.logging_range_count == 0:
             logging.info(self.current_entity_type + " ({}/{}) ".format(self.pool_index + 1, self.pool_size)
                          + str(self.processing_counter[self.current_entity_type])
-                         + " " + str(time.time() - self.last_log_time) + " \n " + str(psutil.virtual_memory()))
+                         + " " + str(time.time() - self.last_log_time))
             self.last_log_time = time.time()
 
     def startDocument(self):

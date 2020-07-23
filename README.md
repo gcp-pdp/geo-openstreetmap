@@ -111,39 +111,41 @@ separate [GCK node pools](https://cloud.google.com/composer/docs/how-to/using/us
     GKE_CLUSTER_NAME=$(echo $GKE_CLUSTER_FULL_NAME | awk -F/ '{print $6}')
     GKE_ZONE=$(echo $GKE_CLUSTER_FULL_NAME | awk -F/ '{print $4}')
     ```
-2. Create node pool for the `osm_to_nodes_ways_relations` and `generate_layers` operation:
+2. Create node pool for Kubernetes POD operations that requires _large single_ machine :
     
     - Set pool parameters for **Planet** file:
     ```
-    ADDITIONAL_POOL_NUM_CORES=4
-    ADDITIONAL_POOL_DISK_SIZE=1200
+    ADDT_SN_POOL_NUM_CORES=4
+    ADDT_SN_POOL_DISK_SIZE=1200
+    ADDT_SN_POOL_MAX_NUM_TREADS=$((ADDT_SN_POOL_NUM_CORES/2))
     ```
     or for **History** file:
     ```
-    ADDITIONAL_POOL_NUM_CORES=32
-    ADDITIONAL_POOL_DISK_SIZE=2000
+    ADDT_SN_POOL_NUM_CORES=32
+    ADDT_SN_POOL_DISK_SIZE=2000
+    ADDT_SN_POOL_MAX_NUM_TREADS=$((ADDT_SN_POOL_NUM_CORES/4))
     ```
     - Set other parameters and create GKE Pool
     ```buildoutcfg
-    ADDITIONAL_POOL_NAME=osm-to-bq-additional-pool
-    ADDITIONAL_POOL_MACHINE_TYPE=n1-highmem-$ADDITIONAL_POOL_NUM_CORES
-    ADDITIONAL_GKE_POOL_POD_MAX_NUM_TREADS=$((ADDITIONAL_POOL_NUM_CORES/2))
+    ADDT_SN_POOL_NAME=osm-addt-sn-pool
+    ADDT_SN_POOL_MACHINE_TYPE=n1-highmem-$ADDITIONAL_POOL_NUM_CORES
     ADDITIONAL_POOL_NUM_NODES=1
-    gcloud container node-pools create $ADDITIONAL_POOL_NAME \
+    gcloud container node-pools create $ADDT_SN_POOL_NAME \
         --cluster $GKE_CLUSTER_NAME \
         --project $PROJECT_ID \
         --zone $GKE_ZONE \
-        --machine-type $ADDITIONAL_POOL_MACHINE_TYPE \
-        --num-nodes $ADDITIONAL_POOL_NUM_NODES \
-        --disk-size $ADDITIONAL_POOL_DISK_SIZE \
+        --machine-type $ADDT_SN_POOL_MACHINE_TYPE \
+        --num-nodes $ADDT_SN_POOL_NUM_NODES \
+        --disk-size $ADDT_SN_POOL_DISK_SIZE \
         --scopes gke-default,storage-rw,bigquery
     ```
 #### Planet file GKE node pool for features POD 
 This GKE pool should be created only if you are working with a **Planet** file
 1. Create node pool for the `osm_to_features` operation:
     ```buildoutcfg
+    OSM_TO_FEATURES_POOL_NUM_CORES=32
     OSM_TO_FEATURES_POOL_NAME=osm-to-features-pool
-    OSM_TO_FEATURES_POOL_MACHINE_TYPE=n1-highmem-32
+    OSM_TO_FEATURES_POOL_MACHINE_TYPE=n1-highmem-$OSM_TO_FEATURES_POOL_NUM_CORES
     OSM_TO_FEATURES_POOL_NUM_NODES=2
     OSM_TO_FEATURES_POOL_DISK_SIZE=1200
     gcloud container node-pools create $OSM_TO_FEATURES_POOL_NAME \
@@ -157,9 +159,31 @@ This GKE pool should be created only if you are working with a **Planet** file
     ```
 2. Save value of requested memory for `osm_to_features` into variable:
     ```
-    OSM_TO_FEATURES_POD_REQUESTED_MEMORY=170G
+    OSM_TO_FEATURES_POD_REQUESTED_MEMORY=$((OSM_TO_FEATURES_POOL_NUM_CORES*5))G
     ```
 
+#### History file GKE node pool for features POD 
+This GKE pool should be created only if you are working with a **History** file
+1. Create node pool for Kubernetes POD operations that requires _several small_ machines:
+    ```buildoutcfg
+    ADDT_MN_POOL_NUM_CORES=8
+    ADDT_MN_POOL_DISK_SIZE=2500
+    ADDT_MN_POOL_NAME=osm-addt-mn-pool
+    ADDT_MN_POOL_MACHINE_TYPE=n1-highmem-$ADDT_MN_POOL_NUM_CORES
+    ADDT_MN_POOL_NUM_NODES=14
+    gcloud container node-pools create $ADDT_MN_POOL_NAME \
+        --cluster $GKE_CLUSTER_NAME \
+        --project $PROJECT_ID \
+        --zone $GKE_ZONE \
+        --machine-type $ADDT_MN_POOL_MACHINE_TYPE \
+        --num-nodes $ADDT_MN_POOL_NUM_NODES \
+        --disk-size $ADDT_MN_POOL_DISK_SIZE \
+        --scopes gke-default,storage-rw,bigquery
+    ```
+2. Save value of requested memory for `osm-addt-mn-pool` pods operations:
+    ```
+    OSM_TO_FEATURES_POD_REQUESTED_MEMORY=$((OSM_TO_FEATURES_POOL_NUM_CORES*5))G
+    ```
 ### Set pipeline parameters into Composer env vars 
 1. Fill `deployment/config/config.json` with the project's parameters using `deployment/config/generate_config.py` script:
     ```
@@ -169,15 +193,19 @@ This GKE pool should be created only if you are working with a **Planet** file
         --osm_url=$OSM_URL \
         --osm_md5_url=$OSM_MD5_URL \
         --gcs_transfer_bucket=$TRANSFER_BUCKET_NAME \
-        --json_results_gcs_uri=gs://$WORK_BUCKET_NAME/results_jsonl/ \
+        --gcs_work_bucket=$WORK_BUCKET_NAME \
         --transfer_index_files_gcs_uri=gs://$WORK_BUCKET_NAME/gsc_transfer_index/ \
         --osm_to_features_image=$OSM_TO_FEATURES_IMAGE \
         --osm_to_nodes_ways_relations_image=$OSM_TO_NODES_WAYS_RELATIONS_IMAGE \
+        --generate_layers_image=$GENERATE_LAYERS_IMAGE \
+        --osm_converter_with_history_index_image=$OSM_CONVERTER_WITH_HISTORY_INDEX_IMAGE \
         --osm_to_features_gke_pool=$OSM_TO_FEATURES_POOL_NAME \
         --osm_to_features_gke_pod_requested_memory=$OSM_TO_FEATURES_POD_REQUESTED_MEMORY \
-        --additional_gke_pool=$ADDITIONAL_POOL_NAME \
-        --additional_gke_pool_pod_max_num_treads=$ADDITIONAL_GKE_POOL_POD_MAX_NUM_TREADS \
-        --generate_layers_image=$GENERATE_LAYERS_IMAGE \
+        --addt_sn_gke_pool=$ADDT_SN_POOL_NAME \
+        --addt_sn_gke_pool_max_num_treads=$ADDT_SN_POOL_MAX_NUM_TREADS \
+        --addt_mn_gke_pool=$ADDT_MN_POOL_NAME \
+        --addt_mn_gke_pool_num_nodes=$ADDT_MN_POOL_NUM_NODES \
+        --addt_mn_pod_requested_memory=$ADDT_MN_POD_REQUESTED_MEMORY \
         --bq_dataset_to_export=$BQ_DATASET
     ```
 2. Set variables from `deployment/config/config.json` to Cloud Composer environment:

@@ -162,14 +162,17 @@ class BatchManager(object):
                                                             result_ways_ids_map, result_relations_ids_map)
             result_func(relation_dict)
 
-    def generate_batch_osm_file_name(self, work_dir, current_entity_type, current_index):
+    def generate_batch_osm_file_name(self, work_dir, current_entity_type, current_index, pool_size):
         batch_end = current_index
-        batch_start = batch_end - self.gdal_batch_size
+        batch_start = batch_end - (self.get_batch_limit_for_current_entity(current_entity_type)*pool_size)
         return work_dir + '{}_{}_{}.osm'.format(current_entity_type, batch_start, batch_end)
 
     def is_full(self, entity_type, processing_counter):
-        return self.ways_batch_counter >= self.gdal_batch_size \
+        return self.ways_batch_counter >= self.get_batch_limit_for_current_entity(entity_type) \
                or processing_counter[entity_type] >= self.entities_number[entity_type]
+
+    def get_batch_limit_for_current_entity(self, entity_type):
+        return self.gdal_batch_size if entity_type != "relations" else self.gdal_batch_size/2
 
     def reset(self):
         self.ways_batch_counter = 0

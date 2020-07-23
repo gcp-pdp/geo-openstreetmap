@@ -1,2 +1,4 @@
 .idea
 venv/
+test_data/
+deployment/create_full_*

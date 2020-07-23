@@ -7,7 +7,6 @@ from airflow.contrib.operators import kubernetes_pod_operator
 
 from airflow.contrib.operators import gcs_to_bq
 from airflow.contrib.operators import bigquery_operator
-from airflow.contrib.kubernetes import pod
 
 from utils import bq_utils
 from utils import gcs_utils
@@ -23,16 +22,17 @@ osm_to_features_image = os.environ.get('OSM_TO_FEATURES_IMAGE')
 osm_to_features_gke_pool = os.environ.get('OSM_TO_FEATURES_GKE_POOL')
 osm_to_features_gke_pod_requested_memory = os.environ.get('OSM_TO_FEATURES_GKE_POD_REQUESTED_MEMORY')
 
-json_results_gcs_uri = os.environ.get('JSON_RESULTS_GCS_URI')
+gcs_work_bucket = os.environ.get('GCS_WORK_BUCKET')
 osm_to_nodes_ways_relations_image = os.environ.get('OSM_TO_NODES_WAYS_RELATIONS_IMAGE')
 
-additional_gke_pool = os.environ.get('ADDITIONAL_GKE_POOL')
-additional_gke_pool_pod_max_num_treads = os.environ.get('ADDITIONAL_GKE_POOL_POD_MAX_NUM_TREADS')
+additional_gke_pool = os.environ.get('ADDT_SN_GKE_POOL')
+additional_gke_pool_pod_max_num_treads = os.environ.get('ADDT_SN_GKE_POOL_MAX_NUM_TREADS')
 
 generate_layers_image = os.environ.get('GENERATE_LAYERS_IMAGE')
 test_osm_gcs_uri = os.environ.get('TEST_OSM_GCS_URI')
 
 feature_union_bq_table_name = "feature_union"
+json_results_gcs_uri = "gs://{}/results_jsonl/".format(gcs_work_bucket)
 
 local_data_dir_path = "/home/airflow/gcs/dags/"
 
@@ -99,7 +99,7 @@ with airflow.DAG(
                       'FEATURES_DIR_GCS_URI': json_results_gcs_uri,
                       'LAYERS': layers},
             image=osm_to_features_image,
-            resources=pod.Resources(request_memory=osm_to_features_gke_pod_requested_memory),
+            resources={"request_memory": osm_to_features_gke_pod_requested_memory},
             affinity=create_gke_affinity_with_pool_name(osm_to_features_gke_pool)
         )
 
