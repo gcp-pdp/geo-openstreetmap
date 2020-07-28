@@ -1,17 +1,18 @@
 import osmium
 import logging
 import os
-import errno
 import json
 import argparse
 import multiprocessing
-
-from datetime import datetime
-from google.cloud import storage
+import datetime
+import time
 
 import elements_transformer
 import osm_index
 import elements_processing
+import cache_manager
+import gcs_service
+import file_service
 
 from gdal import gdal_handler
 from parser import OsmParser
@@ -90,7 +91,7 @@ class HistoryHandler(OsmParser):
 
     def __init__(self, osm_indexer_map,
                  last_max_element_timestamp, num_shards, files_dict, work_dir, processing_counter, entities_number,
-                 pool_index, pool_size, logging_range_count=100000, gdal_batch_size=4, ignore_subrelations=True):
+                 pool_index, pool_size, logging_range_count=100000, gdal_batch_size=5000, ignore_subrelations=True):
 
         OsmParser.__init__(self, processing_counter, logging_range_count, pool_size, pool_index)
         self.osm_indexer_map = osm_indexer_map
@@ -224,7 +225,7 @@ class HistoryHandler(OsmParser):
 
     def get_relation_and_its_dependencies_as_dict(self, relation):
         relation_dict = elements_transformer.osm_entity_relation_dict(relation, tags_to_bq=False)
-        relation_timestamp = int(datetime.timestamp(relation.timestamp))
+        relation_timestamp = int(datetime.datetime.timestamp(relation.timestamp))
 
         relation_nodes_map = {}
         relation_ways_map = {}
@@ -265,83 +266,6 @@ class HistoryHandler(OsmParser):
                                                                           relation_relations_map)
 
 
-def from_gcs_to_local_file(src_gcs_bucket, src_gcs_name, local_file_path):
-    storage_client = storage.Client(os.environ['PROJECT_ID'])
-    # Create a bucket object for our bucket
-    bucket = storage_client.get_bucket(src_gcs_bucket)
-    # Create a blob object from the filepath
-    blob = bucket.blob(src_gcs_name)
-    # Download the file to a destination
-    logging.info("Downloading gs://{}/{} to {}...".format(src_gcs_bucket, src_gcs_name, local_file_path))
-    blob.download_to_filename(local_file_path)
-    logging.info("Successfully downloaded gs://{}/{} to {}".format(src_gcs_bucket, src_gcs_name, local_file_path))
-
-
-def is_gcs_blob_exists(bucket, blob_name):
-    storage_client = storage.Client(os.environ['PROJECT_ID'])
-    # Create a bucket object for our bucket
-    bucket = storage_client.get_bucket(bucket)
-    # Create a blob object from the filepath
-    blob = bucket.blob(blob_name)
-    return blob.exists()
-
-
-def upload_file_to_gcs(filename, destination_bucket_name, destination_blob_name):
-    """
-    Uploads a file to a given Cloud Storage bucket and returns the public url
-    to the new object.
-    """
-    bucket = storage.Client().bucket(destination_bucket_name)
-    blob = bucket.blob(destination_blob_name)
-    logging.info("Uploading of {} to gs://{}/{}...".format(filename, destination_bucket_name, destination_blob_name))
-    blob.upload_from_filename(
-        filename,
-        content_type="text/plain")
-    logging.info(
-        "Finished uploading of {} to gs://{}/{}".format(filename, destination_bucket_name, destination_blob_name))
-
-
-def make_dir_for_file_if_not_exists(filename):
-    if not os.path.exists(os.path.dirname(filename)):
-        try:
-            os.makedirs(os.path.dirname(filename))
-        except OSError as exc:  # Guard against race condition
-            if exc.errno != errno.EEXIST:
-                raise
-
-
-def parse_uri_to_bucket_and_filename(file_path):
-    """Divides file uri to bucket name and file name"""
-    path_parts = file_path.split("//")
-    if len(path_parts) >= 2:
-        main_part = path_parts[1]
-        if "/" in main_part:
-            divide_index = main_part.index("/")
-            bucket_name = main_part[:divide_index]
-            file_name = main_part[divide_index + 1 - len(main_part):]
-
-            return bucket_name, file_name
-    return "", ""
-
-
-def file_name_from_path(file_path):
-    if "/" in file_path:
-        return file_path.split("/")[-1]
-    else:
-        return file_path
-
-
-def file_name_without_ext(file_name):
-    if "." in file_name:
-        return file_name.split(".")[0]
-    else:
-        return file_name
-
-
-def create_processing_counter():
-    return {key: 0 for key in OSM_ENTITIES}
-
-
 def run_index_creator(dest_local_file_path, osm_indexer, indexing_processing_counter,
                       num_shards, pool_index, last_max_element_timestamp):
     index_creator = IndexCreator(osm_indexer, indexing_processing_counter, last_max_element_timestamp,
@@ -357,7 +281,7 @@ def create_osm_index(osm_local_file_path, db_file_path, num_shards, pool_index,
     if not db_exists:
         osm_indexer.create()
         logging.info("Creating DB {} ".format(db_file_path))
-    indexing_processing_counter = create_processing_counter()
+    indexing_processing_counter = cache_manager.create_processing_counter(OSM_ENTITIES)
     max_timestamp = run_index_creator(osm_local_file_path, osm_indexer, indexing_processing_counter,
                                       num_shards, pool_index,
                                       last_max_element_timestamp)
@@ -385,20 +309,6 @@ def run_create_osm_index_in_parallel(dest_local_file_path, dbs_file_paths, last_
     return indexing_processing_counter, max(max_timestamps)
 
 
-def merge_if_db_needed_and_upload_to_gcs(dbs, index_db_file_path, merge_db_shards, db_exists):
-    if merge_db_shards:
-        dbs_to_merge = list(dbs.values())
-        osm_index.merge_dbs(index_db_file_path, dbs_to_merge, db_exists)
-        upload_file_to_gcs(index_db_file_path, converted_results_bucket,
-                           converted_results_gcs_dir + file_name_from_path(index_db_file_path))
-        return {0: index_db_file_path}
-    else:
-        for shard_index, db_file_path in dbs.items():
-            upload_file_to_gcs(db_file_path, converted_results_bucket,
-                               converted_results_gcs_dir + file_name_from_path(db_file_path))
-        return dbs
-
-
 def create_output_files(index):
     entities_out_files_dict = {}
     results_local_paths = []
@@ -406,64 +316,11 @@ def create_output_files(index):
         path = data_dir + "{}_{}.jsonl".format(entity, index)
         results_local_paths.append(path)
 
-        make_dir_for_file_if_not_exists(path)
+        file_service.make_dir_for_file_if_not_exists(path)
         entities_out_files_dict[entity] = open(path, "w")
 
     logging.info("Creating {} files".format(str(results_local_paths)))
     return entities_out_files_dict, results_local_paths
-
-
-def get_metadata_file_path(db_name):
-    return file_name_without_ext(db_name) + ".metadata.txt"
-
-
-def metadata_from_file(file_path):
-    try:
-        with open(file_path, "r") as f:
-            metadata_json = json.load(f)
-        return metadata_json["counter"], int(metadata_json["db"]), int(metadata_json["history"])
-    except Exception:
-        return create_processing_counter(), 0, 0
-
-
-def metadata_to_file(file_path, processing_counter, max_timestamp_db, max_timestamp_history):
-    with open(file_path, "w") as f:
-        json.dump({"counter": processing_counter, "db": max_timestamp_db, "history": max_timestamp_history}, f)
-    return file_path
-
-
-def download_db_and_last_max_element_timestamp_if_exists(dbs_file_paths,
-                                                         timestamps_file_path,
-                                                         dest_bucket, dest_dir_name):
-    db_gcs_and_local_paths = []
-    for db_file_path in dbs_file_paths:
-        db_name = file_name_from_path(db_file_path)
-        db_blob_name = dest_dir_name + db_name
-
-        if not is_gcs_blob_exists(dest_bucket, db_blob_name):
-            return create_processing_counter(), 0, 0
-        else:
-            db_gcs_and_local_paths.append((db_blob_name, db_file_path))
-
-    for db_blob_name, db_file_path in db_gcs_and_local_paths:
-        from_gcs_to_local_file(dest_bucket, db_blob_name, db_file_path)
-
-    timestamps_file_name = file_name_from_path(timestamps_file_path)
-    timestamps_file_blob_name = dest_dir_name + timestamps_file_name
-    if is_gcs_blob_exists(dest_bucket, timestamps_file_blob_name):
-        from_gcs_to_local_file(dest_bucket, timestamps_file_blob_name, timestamps_file_path)
-        return metadata_from_file(timestamps_file_path)
-    else:
-        return create_processing_counter(), 0, 0
-
-
-def upload_metadata_to_gcs(timestamps_file_path, indexing_processing_counter,
-                           max_timestamp_db, max_timestamp_history, dest_bucket, dest_dir_name):
-    metadata_to_file(timestamps_file_path, indexing_processing_counter, max_timestamp_db, max_timestamp_history)
-
-    timestamps_file_name = file_name_from_path(timestamps_file_path)
-    timestamps_file_blob_name = dest_dir_name + timestamps_file_name
-    upload_file_to_gcs(timestamps_file_path, dest_bucket, timestamps_file_blob_name)
 
 
 if __name__ == "__main__":
@@ -474,6 +331,7 @@ if __name__ == "__main__":
     parser.add_argument("--converted_gcs_dir", help="URI of GCS dir to save result files", required=True)
     parser.add_argument("--index_db_and_metadata_gcs_dir", help="URI of GCS dir with index DB and metadata files",
                         required=True)
+    parser.add_argument("--num_threads", help="Number of threads to create index", type=int, default=2)
     parser.add_argument("--num_db_shards", help="Number of db to create in indexing mode", type=int, default=2)
     parser.add_argument("--overwrite", help="Overwrite previous OSM index database and results",
                         type=bool, default=False)
@@ -481,66 +339,94 @@ if __name__ == "__main__":
                         action='store_true')
     parser.add_argument("--history_processing_pool_index", type=int, default=0)
     parser.add_argument("--history_processing_pool_size", type=int, default=1)
+    parser.add_argument("--data_freshness_exp_days", type=int, default=5)
 
     args = parser.parse_args()
     num_threads = args.num_db_shards
-    src_bucket, src_name = parse_uri_to_bucket_and_filename(args.src_pbf_file_uri)
+    src_bucket, src_name = gcs_service.parse_uri_to_bucket_and_filename(args.src_pbf_file_uri)
     index_db_and_metadata_bucket, index_db_and_metadata_gcs_dir = \
-        parse_uri_to_bucket_and_filename(args.index_db_and_metadata_gcs_dir)
-    converted_results_bucket, converted_results_gcs_dir = parse_uri_to_bucket_and_filename(args.converted_gcs_dir)
+        gcs_service.parse_uri_to_bucket_and_filename(args.index_db_and_metadata_gcs_dir)
+    converted_results_bucket, converted_results_gcs_dir = \
+        gcs_service.parse_uri_to_bucket_and_filename(args.converted_gcs_dir)
 
     data_dir = os.environ['DATA_DIR']
-    src_file_name = file_name_from_path(src_name)
+    src_file_name = file_service.file_name_from_path(src_name)
     osm_local_file_path = data_dir + src_file_name
-    make_dir_for_file_if_not_exists(osm_local_file_path)
-    from_gcs_to_local_file(src_bucket, src_name, osm_local_file_path)
+    file_service.make_dir_for_file_if_not_exists(osm_local_file_path)
 
-    index_db_file_path_pattern = file_name_without_ext(osm_local_file_path) + "_{}_{}.sqlite.db"
-    metadata_file_path = get_metadata_file_path(osm_local_file_path)
+    index_db_file_path_pattern = file_service.file_name_without_ext(osm_local_file_path) + "_{}_{}.sqlite.db"
+    metadata_file_path = cache_manager.get_metadata_file_path(osm_local_file_path, num_threads)
     dbs_file_paths = [index_db_file_path_pattern.format(index, num_threads) for index in range(1, num_threads + 1)]
 
-    if args.overwrite and args.create_index_mode:
-        processing_counter, max_timestamp_db, max_timestamp_history = create_processing_counter(), 0, 0
-    else:
-        processing_counter, max_timestamp_db, max_timestamp_history = \
-            download_db_and_last_max_element_timestamp_if_exists(
-                dbs_file_paths, metadata_file_path, index_db_and_metadata_bucket, index_db_and_metadata_gcs_dir)
+    metadata = cache_manager.download_and_read_metadata_file(metadata_file_path, index_db_and_metadata_bucket,
+                                                             index_db_and_metadata_gcs_dir)
+    logging.info("Metadata fot {}: {}".format(src_name, metadata))
+    max_timestamp_db, max_timestamp_history, last_updated_db, last_updated_history, processing_counter = \
+        cache_manager.get_values_from_metadata(metadata, OSM_ENTITIES)
+
+    if args.overwrite:
+        max_timestamp_db = 0
+        max_timestamp_history = 0
 
     if args.create_index_mode:
-        indexing_processing_counter, max_timestamp = \
-            run_create_osm_index_in_parallel(osm_local_file_path, dbs_file_paths, max_timestamp_db)
-        max_timestamp_db = max_timestamp
-        logging.info("Indexing processing counter: {}".format(indexing_processing_counter))
-        logging.info("Max OSM object timestamp: {}".format(max_timestamp))
+        if cache_manager.is_file_fresh(last_updated_db, args.data_freshness_exp_days):
+            logging.info("Index DB is fresh")
+        else:
+            gcs_service.from_gcs_to_local_file(src_bucket, src_name, osm_local_file_path)
+            if max_timestamp_db > 0:
+                cache_manager.download_db_if_exists(dbs_file_paths, index_db_and_metadata_bucket,
+                                                    index_db_and_metadata_gcs_dir)
+            indexing_processing_counter, max_timestamp = \
+                run_create_osm_index_in_parallel(osm_local_file_path, dbs_file_paths, max_timestamp_db)
+            max_timestamp_db = max_timestamp
+            logging.info("Indexing processing counter: {}".format(indexing_processing_counter))
+            logging.info("Max OSM object timestamp: {}".format(max_timestamp))
 
-        for db_file_path in dbs_file_paths:
-            db_gcs_name = index_db_and_metadata_gcs_dir + file_name_from_path(db_file_path)
-            upload_file_to_gcs(db_file_path, index_db_and_metadata_bucket, db_gcs_name)
-        upload_metadata_to_gcs(metadata_file_path, indexing_processing_counter, max_timestamp_db, max_timestamp_history,
-                               index_db_and_metadata_bucket,
-                               index_db_and_metadata_gcs_dir)
+            last_updated_db = int(time.time())
+            for db_file_path in dbs_file_paths:
+                db_gcs_name = index_db_and_metadata_gcs_dir + file_service.file_name_from_path(db_file_path)
+                gcs_service.upload_file_to_gcs(db_file_path, index_db_and_metadata_bucket, db_gcs_name)
+            cache_manager.upload_metadata_to_gcs(metadata_file_path, indexing_processing_counter,
+                                                 max_timestamp_db, max_timestamp_history,
+                                                 last_updated_db, last_updated_history,
+                                                 index_db_and_metadata_bucket,
+                                                 index_db_and_metadata_gcs_dir)
     else:
-        pool_index = args.history_processing_pool_index
-        pool_size = args.history_processing_pool_size
+        if cache_manager.is_file_fresh(last_updated_history, args.data_freshness_exp_days):
+            logging.info("JSONL result files are fresh")
+        else:
+            gcs_service.from_gcs_to_local_file(src_bucket, src_name, osm_local_file_path)
+            db_shards_exist = cache_manager.download_db_if_exists(dbs_file_paths, index_db_and_metadata_bucket,
+                                                                  index_db_and_metadata_gcs_dir)
+            if not db_shards_exist:
+                logging.info("Could not find suitable DB shards for current args: {}".format(str(args)))
+                exit(1)
 
-        entities_out_files_dict, results_local_paths = create_output_files(args.history_processing_pool_index)
+            pool_index = args.history_processing_pool_index
+            pool_size = args.history_processing_pool_size
 
-        osm_indexer_map = {shard_index: osm_index.SQLiteOsmIndex(db_file_path)
-                           for shard_index, db_file_path in enumerate(dbs_file_paths)}
-        history_handler = HistoryHandler(osm_indexer_map, max_timestamp_history,
-                                         args.num_db_shards, entities_out_files_dict, data_dir,
-                                         create_processing_counter(), processing_counter,
-                                         pool_index, pool_size)
-        history_handler.apply_file(osm_local_file_path)
+            entities_out_files_dict, results_local_paths = create_output_files(args.history_processing_pool_index)
 
-        for shard_index, osm_indexer in osm_indexer_map.items():
-            osm_indexer.close()
-        for entity, out_file in entities_out_files_dict.items():
-            out_file.close()
+            osm_indexer_map = {shard_index: osm_index.SQLiteOsmIndex(db_file_path)
+                               for shard_index, db_file_path in enumerate(dbs_file_paths)}
+            history_processing_counter = cache_manager.create_processing_counter(OSM_ENTITIES)
+            history_handler = HistoryHandler(osm_indexer_map, max_timestamp_history,
+                                             args.num_db_shards, entities_out_files_dict, data_dir,
+                                             history_processing_counter, processing_counter,
+                                             pool_index, pool_size)
+            history_handler.apply_file(osm_local_file_path)
 
-        max_timestamp_history = max_timestamp_db
-        for path in results_local_paths:
-            dest_file_gcs_name = converted_results_gcs_dir + file_name_from_path(path)
-            upload_file_to_gcs(path, converted_results_bucket, dest_file_gcs_name)
-        upload_metadata_to_gcs(metadata_file_path, processing_counter, max_timestamp_db, max_timestamp_history,
-                               index_db_and_metadata_bucket, index_db_and_metadata_gcs_dir)
+            for shard_index, osm_indexer in osm_indexer_map.items():
+                osm_indexer.close()
+            for entity, out_file in entities_out_files_dict.items():
+                out_file.close()
+
+            max_timestamp_history = max_timestamp_db
+            last_updated_history = int(time.time())
+            for path in results_local_paths:
+                dest_file_gcs_name = converted_results_gcs_dir + file_service.file_name_from_path(path)
+                gcs_service.upload_file_to_gcs(path, converted_results_bucket, dest_file_gcs_name)
+            cache_manager.upload_metadata_to_gcs(metadata_file_path, processing_counter, max_timestamp_db,
+                                                 max_timestamp_history,
+                                                 last_updated_db, last_updated_history,
+                                                 index_db_and_metadata_bucket, index_db_and_metadata_gcs_dir)

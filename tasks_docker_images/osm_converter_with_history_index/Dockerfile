@@ -14,28 +14,28 @@ RUN apt-get install binutils libproj-dev gdal-bin -y
 RUN pip3 install --upgrade google-cloud-storage
 
 # install pyosmium
-#RUN pip3 install osmium
+RUN pip3 install osmium
 
-RUN apt-get install wget -y
-RUN apt-get install unzip -y
-
-RUN wget https://github.com/osmcode/pyosmium/archive/master.zip
-RUN unzip master.zip
-WORKDIR /pyosmium-master
-
-RUN git clone --quiet --depth 1 https://github.com/osmcode/libosmium.git contrib/libosmium
-RUN git clone --quiet --depth 1 https://github.com/mapbox/protozero.git contrib/protozero
-RUN git clone --quiet --depth 1 https://github.com/pybind/pybind11.git contrib/pybind11
-RUN pip3 install -q nose mock shapely setuptools
-RUN python3 setup.py build
-RUN python3 setup.py install
-
-WORKDIR /
+#RUN apt-get install wget -y
+#RUN apt-get install unzip -y
+#
+#RUN wget https://github.com/osmcode/pyosmium/archive/master.zip
+#RUN unzip master.zip
+#WORKDIR /pyosmium-master
+#
+#RUN git clone --quiet --depth 1 https://github.com/osmcode/libosmium.git contrib/libosmium
+#RUN git clone --quiet --depth 1 https://github.com/mapbox/protozero.git contrib/protozero
+#RUN git clone --quiet --depth 1 https://github.com/pybind/pybind11.git contrib/pybind11
+#RUN pip3 install -q nose mock shapely setuptools
+#RUN python3 setup.py build
+#RUN python3 setup.py install
+#
+#WORKDIR /
 
 # install guppy3 (memory profiler)
 RUN pip3 install guppy3
 # install psutil
-RUN pip install psutil
+RUN pip install psutil==3.0.1
 
 # set env vars
 ENV DATA_DIR /osm_converter_with_history_index/data/

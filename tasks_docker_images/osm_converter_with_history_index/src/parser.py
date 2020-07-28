@@ -9,6 +9,10 @@ from xml.sax import handler
 import psutil
 
 
+def to_mb(bytes_num):
+    return int(bytes_num / (1024 * 1024))
+
+
 class OsmParser(osmium.SimpleHandler):
 
     def __init__(self, processing_counter, logging_range_count, pool_size=1, pool_index=0):
@@ -31,8 +35,8 @@ class OsmParser(osmium.SimpleHandler):
             logging.info(self.current_entity_type + " ({}/{}) ".format(self.pool_index + 1, self.pool_size)
                          + str(self.processing_counter[self.current_entity_type])
                          + " " + str(time.time() - self.last_log_time)
-                         + " Memory: usage {}, used {} MB"
-                         .format(virtual_memory.percent, virtual_memory.used / (1024 * 1024)))
+                         + " Memory: usage {}, free {} MB, used {} MB"
+                         .format(virtual_memory.percent, to_mb(virtual_memory.free), to_mb(virtual_memory.used)))
             self.last_log_time = time.time()
 
     def node(self, node):
