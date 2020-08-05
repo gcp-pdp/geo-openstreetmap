@@ -1,6 +1,7 @@
 import sqlite3
 import json
 import logging
+import time
 
 
 class OsmIndex(object):
@@ -59,8 +60,14 @@ class SQLiteOsmIndex(OsmIndex):
     def get_query_time(self):
         return self.query_time
 
+    def reset_query_time(self):
+        self.query_time = 0
+
     def get_query_counter(self):
         return self.query_counter
+
+    def reset_query_counter(self):
+        self.query_counter = 0
 
     def create(self):
         self.init_all_tables()
@@ -80,10 +87,13 @@ class SQLiteOsmIndex(OsmIndex):
             self.save()
 
     def execute_query(self, query, values=None):
+        query_start_timestamp = time.time()
         if values:
             self.osm_index_db_cursor.execute(query, values)
         else:
             self.osm_index_db_cursor.execute(query)
+        self.query_time += (time.time() - query_start_timestamp)
+        self.query_counter += 1
 
     def add_values_to_sqlite_table(self, table_name, values):
         placeholders = ",".join(["?"] * len(values))

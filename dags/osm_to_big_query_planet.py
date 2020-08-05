@@ -11,9 +11,7 @@ from airflow.contrib.operators import bigquery_operator
 from utils import bq_utils
 from utils import gcs_utils
 
-YESTERDAY = datetime.datetime.combine(
-    datetime.datetime.today() - datetime.timedelta(1),
-    datetime.datetime.min.time())
+year_start = datetime.datetime(2020, 1, 1)
 
 project_id = os.environ.get('PROJECT_ID')
 bq_dataset_to_export = os.environ.get('BQ_DATASET_TO_EXPORT')
@@ -38,17 +36,18 @@ local_data_dir_path = "/home/airflow/gcs/dags/"
 
 default_args = {
     'retries': 1,
-    'retry_delay': datetime.timedelta(minutes=1),
-    'start_date': YESTERDAY,
+    'retry_delay': datetime.timedelta(minutes=15),
+    'start_date': year_start
 }
 
 max_bad_records_for_bq_export = 10000
 
 with airflow.DAG(
         'osm_to_big_query_planet',
-        'catchup=False',
+        catchup=False,
         default_args=default_args,
         schedule_interval=None) as dag:
+
     def file_to_json(file_path):
         with open(file_path) as f:
             json_dict = json.load(f)
@@ -100,7 +99,8 @@ with airflow.DAG(
                       'LAYERS': layers},
             image=osm_to_features_image,
             resources={"request_memory": osm_to_features_gke_pod_requested_memory},
-            affinity=create_gke_affinity_with_pool_name(osm_to_features_gke_pool)
+            affinity=create_gke_affinity_with_pool_name(osm_to_features_gke_pool),
+            execution_timeout=datetime.timedelta(days=4)
         )
 
         osm_to_features_tasks_data.append((osm_to_features_task, branch_name))
@@ -153,7 +153,8 @@ with airflow.DAG(
                   'NODES_WAYS_RELATIONS_DIR_GCS_URI': json_results_gcs_uri,
                   'NUM_THREADS': additional_gke_pool_pod_max_num_treads},
         image=osm_to_nodes_ways_relations_image,
-        affinity=create_gke_affinity_with_pool_name(additional_gke_pool)
+        affinity=create_gke_affinity_with_pool_name(additional_gke_pool),
+        execution_timeout=datetime.timedelta(days=4)
     )
 
     # TASK #5.N. nodes_ways_relations_to_bq

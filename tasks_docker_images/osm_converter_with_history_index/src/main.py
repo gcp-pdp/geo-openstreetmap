@@ -23,19 +23,21 @@ OSM_ENTITIES = ["nodes", "ways", "relations"]
 class IndexCreator(OsmParser):
 
     def __init__(self,
-                 osm_indexer,
+                 osm_indexer_map,
                  processing_counter,
                  last_max_element_timestamp,
+                 num_db_shards,
                  pool_size=1,
                  pool_index=0,
                  batch_size_to_commit=1000000,
                  logging_range_count=1000000,
                  with_relations=False):
         OsmParser.__init__(self, processing_counter, logging_range_count, pool_size, pool_index)
-        self.osm_indexer = osm_indexer
+        self.osm_indexer_map = osm_indexer_map
         self.batch_size_to_commit = batch_size_to_commit
         self.with_relations = with_relations
         self.last_max_element_timestamp = last_max_element_timestamp
+        self.num_db_shards = num_db_shards
         self.max_timestamp = 0
         self.added_records = 0
 
@@ -56,21 +58,22 @@ class IndexCreator(OsmParser):
         self.process_osm_object(relation, self.current_entity_type)
 
     def process_osm_object(self, osm_object, osm_entity_type):
-        batch_index = elements_processing.get_uniformly_shard_index_from_id(osm_object.id, self.pool_size)
-        if batch_index == self.pool_index:
+        batch_index = elements_processing.get_uniformly_shard_index_from_id(osm_object.id, self.num_db_shards)
+        if batch_index in self.osm_indexer_map:
             osm_timestamp = elements_transformer.osm_timestamp_from_osm_entity(osm_object)
             if osm_timestamp > self.last_max_element_timestamp:
+                osm_indexer = self.osm_indexer_map[batch_index]
                 if osm_entity_type == "nodes":
-                    self.osm_indexer.add_node_to_index(
+                    osm_indexer.add_node_to_index(
                         elements_transformer.osm_entity_node_dict(osm_object,
                                                                   is_simplified=True, osm_timestamp=osm_timestamp))
                 elif osm_entity_type == "ways":
-                    self.osm_indexer.add_way_to_index(
+                    osm_indexer.add_way_to_index(
                         elements_transformer.osm_entity_way_dict(osm_object,
                                                                  is_simplified=True, osm_timestamp=osm_timestamp))
                 elif osm_entity_type == "relations":
                     if self.with_relations:
-                        self.osm_indexer.add_relation_to_index(
+                        osm_indexer.add_relation_to_index(
                             elements_transformer.osm_entity_relation_dict(osm_object,
                                                                           is_simplified=True,
                                                                           osm_timestamp=osm_timestamp))
@@ -81,9 +84,10 @@ class IndexCreator(OsmParser):
 
     def commit_if_needed(self):
         if self.processing_counter[self.current_entity_type] % self.batch_size_to_commit == 0:
-            self.osm_indexer.save()
-            logging.info("Commit changes to {}. Added records {}".format(self.osm_indexer.get_db_file_path(),
-                                                                         self.added_records))
+            for index, osm_indexer in self.osm_indexer_map.items():
+                osm_indexer.save()
+                logging.info("Commit changes to {}. Added records {}".format(osm_indexer.get_db_file_path(),
+                                                                             self.added_records))
             self.added_records = 0
 
 
@@ -143,40 +147,56 @@ class HistoryHandler(OsmParser):
     def is_last_element(self):
         return self.processing_counter[self.current_entity_type] == self.entities_number[self.current_entity_type]
 
+    def log_indexer_efficiency_data(self):
+        total_queries = 0
+        total_time = 0
+        for index, value in self.osm_indexer_map.items():
+            total_queries += value.get_query_counter()
+            total_time += value.get_query_time()
+            value.reset_query_counter()
+            value.reset_query_time()
+
+        logging.info("Executed queries: {}, time: {}. Approx secs/query: {}".format(total_queries, total_time,
+                                                                                    total_time/total_queries))
+
     def node(self, node):
         OsmParser.node(self, node)
-        if self.is_item_index_for_current_pool_index():
-            osm_timestamp = elements_transformer.osm_timestamp_from_osm_entity(node)
-            if osm_timestamp > self.last_max_element_timestamp:
-                node_geometry = str({"type": "Point",
-                                     "coordinates": [node.location.lon,
-                                                     node.location.lat]}) if node.location.valid() else None
-                node_dict = elements_transformer.osm_entity_node_dict(node, node_geometry)
-                self.write_out_to_jsonl(self.current_entity_type, node_dict)
+        # TODO
+        # if self.is_item_index_for_current_pool_index():
+        #     osm_timestamp = elements_transformer.osm_timestamp_from_osm_entity(node)
+        #     if osm_timestamp > self.last_max_element_timestamp:
+        #         node_geometry = str({"type": "Point",
+        #                              "coordinates": [node.location.lon,
+        #                                              node.location.lat]}) if node.location.valid() else None
+        #         node_dict = elements_transformer.osm_entity_node_dict(node, node_geometry)
+        #         self.write_out_to_jsonl(self.current_entity_type, node_dict)
 
     def way(self, way):
         OsmParser.way(self, way)
-        if self.is_item_index_for_current_pool_index():
-            way_osm_timestamp = elements_transformer.osm_timestamp_from_osm_entity(way)
-            if way_osm_timestamp > self.last_max_element_timestamp:
-                way_dict, way_nodes_dicts = self.get_way_and_its_dependencies_as_dict(way, way_osm_timestamp)
-                self.batch_manager.replace_ids_in_way_and_its_dependencies(way_dict, way_nodes_dicts)
-                self.batch_manager.add_osm_dicts_to_batches(way_nodes_dicts, [way_dict])
-
-        if self.batch_manager.is_full(self.current_entity_type, self.processing_counter):
-            temp_osm_file_name = self.generate_batch_osm_file_name(self.pool_size)
-            self.sort_and_write_to_osm_file(temp_osm_file_name)
-
-            target_ids = self.batch_manager.get_ways_simplified_ids()
-            id_geometry_map = self.gdal_handler.osm_to_geojson(temp_osm_file_name, self.current_entity_type,
-                                                               target_ids)
-
-            def add_geometry_and_write(restored_way_dict):
-                restored_way_dict = elements_transformer.edit_way_dict_according_to_bq_schema(restored_way_dict)
-                self.write_out_to_jsonl(self.current_entity_type, restored_way_dict)
-
-            self.batch_manager.restore_ways_ids_and_add_geometry(id_geometry_map, add_geometry_and_write)
-            self.batch_manager.reset()
+        # TODO
+        # if self.is_item_index_for_current_pool_index():
+        #     way_osm_timestamp = elements_transformer.osm_timestamp_from_osm_entity(way)
+        #     if way_osm_timestamp > self.last_max_element_timestamp:
+        #         way_dict, way_nodes_dicts = self.get_way_and_its_dependencies_as_dict(way, way_osm_timestamp)
+        #         self.batch_manager.replace_ids_in_way_and_its_dependencies(way_dict, way_nodes_dicts)
+        #         self.batch_manager.add_osm_dicts_to_batches(way_nodes_dicts, [way_dict])
+        #
+        # if self.batch_manager.is_full(self.current_entity_type, self.processing_counter):
+        #     temp_osm_file_name = self.generate_batch_osm_file_name(self.pool_size)
+        #     self.sort_and_write_to_osm_file(temp_osm_file_name)
+        #
+        #     target_ids = self.batch_manager.get_ways_simplified_ids()
+        #     id_geometry_map = self.gdal_handler.osm_to_geojson(temp_osm_file_name, self.current_entity_type,
+        #                                                        target_ids)
+        #
+        #     def add_geometry_and_write(restored_way_dict):
+        #         restored_way_dict = elements_transformer.edit_way_dict_according_to_bq_schema(restored_way_dict)
+        #         self.write_out_to_jsonl(self.current_entity_type, restored_way_dict)
+        #
+        #     self.batch_manager.restore_ways_ids_and_add_geometry(id_geometry_map, add_geometry_and_write)
+        #     self.batch_manager.reset()
+        #
+        #     self.log_indexer_efficiency_data()
 
     def relation(self, relation):
         OsmParser.relation(self, relation)
@@ -206,6 +226,8 @@ class HistoryHandler(OsmParser):
 
             self.batch_manager.restore_relations_ids_and_add_geometry(id_geometry_map, prepare_and_write_out)
             self.batch_manager.reset()
+
+            self.log_indexer_efficiency_data()
 
     def get_way_and_its_dependencies_as_dict(self, way, way_osm_timestamp):
         way_dict = elements_transformer.osm_entity_way_dict(way, tags_to_bq=False, osm_timestamp=way_osm_timestamp)
@@ -266,35 +288,55 @@ class HistoryHandler(OsmParser):
                                                                           relation_relations_map)
 
 
-def run_index_creator(dest_local_file_path, osm_indexer, indexing_processing_counter,
-                      num_shards, pool_index, last_max_element_timestamp):
-    index_creator = IndexCreator(osm_indexer, indexing_processing_counter, last_max_element_timestamp,
-                                 pool_size=num_shards, pool_index=pool_index)
+def run_index_creator(dest_local_file_path, osm_indexer_map, indexing_processing_counter,
+                      num_db_shards,
+                      pool_size, pool_index, last_max_element_timestamp):
+    index_creator = IndexCreator(osm_indexer_map,
+                                 indexing_processing_counter,
+                                 last_max_element_timestamp,
+                                 num_db_shards,
+                                 pool_size=pool_size,
+                                 pool_index=pool_index)
     index_creator.apply_file(dest_local_file_path)
     return index_creator.get_max_timestamp()
 
 
-def create_osm_index(osm_local_file_path, db_file_path, num_shards, pool_index,
+def create_osm_index(osm_local_file_path, index_and_db_map,
+                     num_db_shards,
+                     pool_size, pool_index,
                      last_max_element_timestamp):
-    db_exists = os.path.exists(db_file_path)
-    osm_indexer = osm_index.SQLiteOsmIndex(db_file_path)
-    if not db_exists:
-        osm_indexer.create()
-        logging.info("Creating DB {} ".format(db_file_path))
+    osm_indexer_map = {}
+    for index, db_file_path in index_and_db_map:
+        db_exists = os.path.exists(db_file_path)
+        current_osm_indexer = osm_index.SQLiteOsmIndex(db_file_path)
+        if not db_exists:
+            current_osm_indexer.create()
+            logging.info("Creating DB {} ".format(db_file_path))
+        osm_indexer_map[index] = current_osm_indexer
+
     indexing_processing_counter = cache_manager.create_processing_counter(OSM_ENTITIES)
-    max_timestamp = run_index_creator(osm_local_file_path, osm_indexer, indexing_processing_counter,
-                                      num_shards, pool_index,
+    max_timestamp = run_index_creator(osm_local_file_path, osm_indexer_map, indexing_processing_counter,
+                                      num_db_shards,
+                                      pool_size, pool_index,
                                       last_max_element_timestamp)
-    osm_indexer.close()
+
+    for index, indexer in osm_indexer_map.items():
+        indexer.close()
     return indexing_processing_counter, max_timestamp
 
 
-def run_create_osm_index_in_parallel(dest_local_file_path, dbs_file_paths, last_max_element_timestamp):
+def run_create_osm_index_in_parallel(dest_local_file_path, dbs_file_paths, num_threads, last_max_element_timestamp):
     pool = multiprocessing.Pool(num_threads)
+
+    pools_and_dbs = [[] for pool_index in range(num_threads)]
+    for index, db_file_path in enumerate(dbs_file_paths):
+        pool_index = index % num_threads
+        pools_and_dbs[pool_index].append((index, db_file_path))
+
     results = []
-    for db_file_path in dbs_file_paths:
-        pool_index = dbs_file_paths.index(db_file_path)
-        result = pool.apply_async(create_osm_index, (dest_local_file_path, db_file_path, num_threads, pool_index,
+    for pool_index in range(num_threads):
+        result = pool.apply_async(create_osm_index, (dest_local_file_path, pools_and_dbs[pool_index],
+                                                     len(dbs_file_paths), num_threads, pool_index,
                                                      last_max_element_timestamp),
                                   error_callback=lambda err: logging.info("Error: {}".format(err)))
         results.append(result)
@@ -339,10 +381,17 @@ if __name__ == "__main__":
                         action='store_true')
     parser.add_argument("--history_processing_pool_index", type=int, default=0)
     parser.add_argument("--history_processing_pool_size", type=int, default=1)
-    parser.add_argument("--data_freshness_exp_days", type=int, default=5)
+    #TODO
+    # parser.add_argument("--data_freshness_exp_days", type=int, default=5)
+    parser.add_argument("--data_freshness_exp_days", type=int, default=15)
 
     args = parser.parse_args()
-    num_threads = args.num_db_shards
+    num_db_shards = args.num_db_shards
+    num_threads = args.num_threads
+
+    if num_threads > num_db_shards:
+        num_threads = num_db_shards
+
     src_bucket, src_name = gcs_service.parse_uri_to_bucket_and_filename(args.src_pbf_file_uri)
     index_db_and_metadata_bucket, index_db_and_metadata_gcs_dir = \
         gcs_service.parse_uri_to_bucket_and_filename(args.index_db_and_metadata_gcs_dir)
@@ -355,8 +404,8 @@ if __name__ == "__main__":
     file_service.make_dir_for_file_if_not_exists(osm_local_file_path)
 
     index_db_file_path_pattern = file_service.file_name_without_ext(osm_local_file_path) + "_{}_{}.sqlite.db"
-    metadata_file_path = cache_manager.get_metadata_file_path(osm_local_file_path, num_threads)
-    dbs_file_paths = [index_db_file_path_pattern.format(index, num_threads) for index in range(1, num_threads + 1)]
+    metadata_file_path = cache_manager.get_metadata_file_path(osm_local_file_path, num_db_shards)
+    dbs_file_paths = [index_db_file_path_pattern.format(index, num_db_shards) for index in range(1, num_db_shards + 1)]
 
     metadata = cache_manager.download_and_read_metadata_file(metadata_file_path, index_db_and_metadata_bucket,
                                                              index_db_and_metadata_gcs_dir)
@@ -364,11 +413,9 @@ if __name__ == "__main__":
     max_timestamp_db, max_timestamp_history, last_updated_db, last_updated_history, processing_counter = \
         cache_manager.get_values_from_metadata(metadata, OSM_ENTITIES)
 
-    if args.overwrite:
-        max_timestamp_db = 0
-        max_timestamp_history = 0
-
     if args.create_index_mode:
+        if args.overwrite:
+            max_timestamp_db = 0
         if cache_manager.is_file_fresh(last_updated_db, args.data_freshness_exp_days):
             logging.info("Index DB is fresh")
         else:
@@ -377,7 +424,7 @@ if __name__ == "__main__":
                 cache_manager.download_db_if_exists(dbs_file_paths, index_db_and_metadata_bucket,
                                                     index_db_and_metadata_gcs_dir)
             indexing_processing_counter, max_timestamp = \
-                run_create_osm_index_in_parallel(osm_local_file_path, dbs_file_paths, max_timestamp_db)
+                run_create_osm_index_in_parallel(osm_local_file_path, dbs_file_paths, num_threads, max_timestamp_db)
             max_timestamp_db = max_timestamp
             logging.info("Indexing processing counter: {}".format(indexing_processing_counter))
             logging.info("Max OSM object timestamp: {}".format(max_timestamp))
@@ -392,6 +439,8 @@ if __name__ == "__main__":
                                                  index_db_and_metadata_bucket,
                                                  index_db_and_metadata_gcs_dir)
     else:
+        if args.overwrite:
+            max_timestamp_history = 0
         if cache_manager.is_file_fresh(last_updated_history, args.data_freshness_exp_days):
             logging.info("JSONL result files are fresh")
         else:
@@ -426,7 +475,7 @@ if __name__ == "__main__":
             for path in results_local_paths:
                 dest_file_gcs_name = converted_results_gcs_dir + file_service.file_name_from_path(path)
                 gcs_service.upload_file_to_gcs(path, converted_results_bucket, dest_file_gcs_name)
-            cache_manager.upload_metadata_to_gcs(metadata_file_path, processing_counter, max_timestamp_db,
-                                                 max_timestamp_history,
+            cache_manager.upload_metadata_to_gcs(metadata_file_path, processing_counter,
+                                                 max_timestamp_db, max_timestamp_history,
                                                  last_updated_db, last_updated_history,
                                                  index_db_and_metadata_bucket, index_db_and_metadata_gcs_dir)

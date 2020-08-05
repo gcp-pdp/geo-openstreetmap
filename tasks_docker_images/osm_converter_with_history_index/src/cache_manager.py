@@ -68,7 +68,8 @@ def metadata_from_file(file_path):
 
 
 def upload_metadata_to_gcs(timestamps_file_path, indexing_processing_counter,
-                           max_timestamp_db, max_timestamp_history, last_updated_db, last_updated_history,
+                           max_timestamp_db, max_timestamp_history,
+                           last_updated_db, last_updated_history,
                            dest_bucket, dest_dir_name):
     metadata_to_file(timestamps_file_path,
                      indexing_processing_counter,

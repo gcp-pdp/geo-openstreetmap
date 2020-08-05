@@ -35,7 +35,7 @@ RUN pip3 install osmium
 # install guppy3 (memory profiler)
 RUN pip3 install guppy3
 # install psutil
-RUN pip install psutil==3.0.1
+RUN pip install psutil
 
 # set env vars
 ENV DATA_DIR /osm_converter_with_history_index/data/
@@ -49,4 +49,4 @@ WORKDIR /osm_converter_with_history_index/src
 #COPY keys /osm_converter_with_history_index/keys
 #ENV GOOGLE_APPLICATION_CREDENTIALS=/osm_converter_with_history_index/keys/gcloud_keys.json
 
-CMD python3 main.py $SRC_OSM_GCS_URI --index_db_and_metadata_gcs_dir $INDEX_DB_AND_METADATA_DIR_GCS_URI --converted_gcs_dir $CONVERTED_OSM_DIR_GCS_URI --num_db_shards $NUM_DB_SHARDS $ADDITIONAL_ARGS
+CMD python3 main.py $SRC_OSM_GCS_URI --index_db_and_metadata_gcs_dir $INDEX_DB_AND_METADATA_DIR_GCS_URI --converted_gcs_dir $CONVERTED_OSM_DIR_GCS_URI --num_db_shards $NUM_DB_SHARDS --num_threads $NUM_THREADS $ADDITIONAL_ARGS

@@ -8,9 +8,7 @@ from airflow.contrib.operators import gcs_to_bq
 
 from utils import gcs_utils
 
-YESTERDAY = datetime.datetime.combine(
-    datetime.datetime.today() - datetime.timedelta(1),
-    datetime.datetime.min.time())
+year_start = datetime.datetime(2020, 1, 1)
 
 project_id = os.environ.get('PROJECT_ID')
 bq_dataset_to_export = os.environ.get('BQ_DATASET_TO_EXPORT')
@@ -28,6 +26,8 @@ addt_mn_gke_pool_num_nodes = os.environ.get('ADDT_MN_GKE_POOL_NUM_NODES')
 generate_layers_image = os.environ.get('GENERATE_LAYERS_IMAGE')
 test_osm_gcs_uri = os.environ.get('TEST_OSM_GCS_URI')
 
+num_index_db_shards = 80
+
 converted_osm_dir_gcs_uri = "gs://{}/converted/".format(gcs_work_bucket)
 index_db_and_metadata_dir_gcs_uri = "gs://{}/index_db_and_metadata/".format(gcs_work_bucket)
 feature_union_bq_table_name = "feature_union"
@@ -35,19 +35,19 @@ feature_union_bq_table_name = "feature_union"
 addt_mn_pod_requested_memory = os.environ.get('ADDT_MN_POD_REQUESTED_MEMORY')
 
 local_data_dir_path = "/home/airflow/gcs/dags/"
-startup_timeout_seconds = 600
+startup_timeout_seconds = 1200
 
 default_args = {
     'retries': 1,
-    'retry_delay': datetime.timedelta(minutes=1),
-    'start_date': YESTERDAY,
+    'retry_delay': datetime.timedelta(minutes=15),
+    'start_date': year_start,
 }
 
 max_bad_records_for_bq_export = 10000
 
 with airflow.DAG(
         'osm_to_big_query_history',
-        'catchup=False',
+        catchup=False,
         default_args=default_args,
         schedule_interval=None) as dag:
     def file_to_json(file_path):
@@ -74,6 +74,7 @@ with airflow.DAG(
             }
         }}
 
+
     src_osm_gcs_uri = test_osm_gcs_uri if test_osm_gcs_uri else "gs://{}/{}".format('{{ dag_run.conf.bucket }}',
                                                                                     '{{ dag_run.conf.name }}')
     # TASK #4. osm_converter_with_history_index
@@ -87,11 +88,13 @@ with airflow.DAG(
                   'SRC_OSM_GCS_URI': src_osm_gcs_uri,
                   'CONVERTED_OSM_DIR_GCS_URI': converted_osm_dir_gcs_uri,
                   'INDEX_DB_AND_METADATA_DIR_GCS_URI': index_db_and_metadata_dir_gcs_uri,
-                  'NUM_DB_SHARDS': addt_sn_gke_pool_max_num_treads,
+                  'NUM_DB_SHARDS': str(num_index_db_shards),
+                  'NUM_THREADS': addt_sn_gke_pool_max_num_treads,
                   'ADDITIONAL_ARGS': create_index_mode_additional_args},
         image=osm_converter_with_history_index_image,
         startup_timeout_seconds=startup_timeout_seconds,
-        affinity=create_gke_affinity_with_pool_name(addt_sn_gke_pool)
+        affinity=create_gke_affinity_with_pool_name(addt_sn_gke_pool),
+        execution_timeout=datetime.timedelta(days=3)
     )
 
     generate_history_data_json_tasks = []
@@ -107,12 +110,14 @@ with airflow.DAG(
                       'SRC_OSM_GCS_URI': src_osm_gcs_uri,
                       'CONVERTED_OSM_DIR_GCS_URI': converted_osm_dir_gcs_uri,
                       'INDEX_DB_AND_METADATA_DIR_GCS_URI': index_db_and_metadata_dir_gcs_uri,
-                      'NUM_DB_SHARDS': addt_sn_gke_pool_max_num_treads,
+                      'NUM_DB_SHARDS': str(num_index_db_shards),
+                      'NUM_THREADS': addt_sn_gke_pool_max_num_treads,
                       'ADDITIONAL_ARGS': generate_history_additional_args},
             image=osm_converter_with_history_index_image,
             startup_timeout_seconds=startup_timeout_seconds,
             resources={"request_memory": addt_mn_pod_requested_memory},
-            affinity=create_gke_affinity_with_pool_name(addt_mn_gke_pool)
+            affinity=create_gke_affinity_with_pool_name(addt_mn_gke_pool),
+            execution_timeout=datetime.timedelta(days=15)
         )
         generate_history_data_json_tasks.append(generate_history_data_json_task)
 
@@ -162,7 +167,8 @@ with airflow.DAG(
                   'BQ_DATASET_TO_EXPORT': bq_dataset_to_export,
                   'MODE': 'history'},
         image=generate_layers_image,
-        affinity=create_gke_affinity_with_pool_name(addt_sn_gke_pool))
+        affinity=create_gke_affinity_with_pool_name(addt_sn_gke_pool),
+        execution_timeout=datetime.timedelta(days=2))
 
     # Graph building
     update_history_index.set_downstream(generate_history_data_json_tasks)
