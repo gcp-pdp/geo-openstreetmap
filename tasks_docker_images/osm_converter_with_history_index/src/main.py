@@ -161,42 +161,40 @@ class HistoryHandler(OsmParser):
 
     def node(self, node):
         OsmParser.node(self, node)
-        # TODO
-        # if self.is_item_index_for_current_pool_index():
-        #     osm_timestamp = elements_transformer.osm_timestamp_from_osm_entity(node)
-        #     if osm_timestamp > self.last_max_element_timestamp:
-        #         node_geometry = str({"type": "Point",
-        #                              "coordinates": [node.location.lon,
-        #                                              node.location.lat]}) if node.location.valid() else None
-        #         node_dict = elements_transformer.osm_entity_node_dict(node, node_geometry)
-        #         self.write_out_to_jsonl(self.current_entity_type, node_dict)
+        if self.is_item_index_for_current_pool_index():
+            osm_timestamp = elements_transformer.osm_timestamp_from_osm_entity(node)
+            if osm_timestamp > self.last_max_element_timestamp:
+                node_geometry = str({"type": "Point",
+                                     "coordinates": [node.location.lon,
+                                                     node.location.lat]}) if node.location.valid() else None
+                node_dict = elements_transformer.osm_entity_node_dict(node, node_geometry)
+                self.write_out_to_jsonl(self.current_entity_type, node_dict)
 
     def way(self, way):
         OsmParser.way(self, way)
-        # TODO
-        # if self.is_item_index_for_current_pool_index():
-        #     way_osm_timestamp = elements_transformer.osm_timestamp_from_osm_entity(way)
-        #     if way_osm_timestamp > self.last_max_element_timestamp:
-        #         way_dict, way_nodes_dicts = self.get_way_and_its_dependencies_as_dict(way, way_osm_timestamp)
-        #         self.batch_manager.replace_ids_in_way_and_its_dependencies(way_dict, way_nodes_dicts)
-        #         self.batch_manager.add_osm_dicts_to_batches(way_nodes_dicts, [way_dict])
-        #
-        # if self.batch_manager.is_full(self.current_entity_type, self.processing_counter):
-        #     temp_osm_file_name = self.generate_batch_osm_file_name(self.pool_size)
-        #     self.sort_and_write_to_osm_file(temp_osm_file_name)
-        #
-        #     target_ids = self.batch_manager.get_ways_simplified_ids()
-        #     id_geometry_map = self.gdal_handler.osm_to_geojson(temp_osm_file_name, self.current_entity_type,
-        #                                                        target_ids)
-        #
-        #     def add_geometry_and_write(restored_way_dict):
-        #         restored_way_dict = elements_transformer.edit_way_dict_according_to_bq_schema(restored_way_dict)
-        #         self.write_out_to_jsonl(self.current_entity_type, restored_way_dict)
-        #
-        #     self.batch_manager.restore_ways_ids_and_add_geometry(id_geometry_map, add_geometry_and_write)
-        #     self.batch_manager.reset()
-        #
-        #     self.log_indexer_efficiency_data()
+        if self.is_item_index_for_current_pool_index():
+            way_osm_timestamp = elements_transformer.osm_timestamp_from_osm_entity(way)
+            if way_osm_timestamp > self.last_max_element_timestamp:
+                way_dict, way_nodes_dicts = self.get_way_and_its_dependencies_as_dict(way, way_osm_timestamp)
+                self.batch_manager.replace_ids_in_way_and_its_dependencies(way_dict, way_nodes_dicts)
+                self.batch_manager.add_osm_dicts_to_batches(way_nodes_dicts, [way_dict])
+
+        if self.batch_manager.is_full(self.current_entity_type, self.processing_counter):
+            temp_osm_file_name = self.generate_batch_osm_file_name(self.pool_size)
+            self.sort_and_write_to_osm_file(temp_osm_file_name)
+
+            target_ids = self.batch_manager.get_ways_simplified_ids()
+            id_geometry_map = self.gdal_handler.osm_to_geojson(temp_osm_file_name, self.current_entity_type,
+                                                               target_ids)
+
+            def add_geometry_and_write(restored_way_dict):
+                restored_way_dict = elements_transformer.edit_way_dict_according_to_bq_schema(restored_way_dict)
+                self.write_out_to_jsonl(self.current_entity_type, restored_way_dict)
+
+            self.batch_manager.restore_ways_ids_and_add_geometry(id_geometry_map, add_geometry_and_write)
+            self.batch_manager.reset()
+
+            self.log_indexer_efficiency_data()
 
     def relation(self, relation):
         OsmParser.relation(self, relation)
@@ -381,9 +379,7 @@ if __name__ == "__main__":
                         action='store_true')
     parser.add_argument("--history_processing_pool_index", type=int, default=0)
     parser.add_argument("--history_processing_pool_size", type=int, default=1)
-    #TODO
-    # parser.add_argument("--data_freshness_exp_days", type=int, default=5)
-    parser.add_argument("--data_freshness_exp_days", type=int, default=15)
+    parser.add_argument("--data_freshness_exp_days", type=int, default=5)
 
     args = parser.parse_args()
     num_db_shards = args.num_db_shards

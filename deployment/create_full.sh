@@ -3,7 +3,15 @@ OSM_URL="$1"
 OSM_MD5_URL="$2"
 REGION_LOCATION="$3"
 SUFFIX="$4"
-MODE="$5"
+
+ADDT_SN_CORES="$5"
+ADDT_SN_DISK_SIZE="$6"
+
+ADDT_MN_CORES="$7"
+ADDT_MN_DISK_SIZE="$8"
+ADDT_MN_NODES="$9"
+
+MODE="$10"
 
 PROJECT_ID=`gcloud config get-value project`
 
@@ -39,7 +47,8 @@ fi
 
 COMPOSER_ENV_NAME=osm-to-bq-${SUFFIX}
 gcloud composer environments create $COMPOSER_ENV_NAME \
-    --location $REGION_LOCATION
+    --location $REGION_LOCATION \
+    --node-count 6
 
 GKE_CLUSTER_FULL_NAME=$(gcloud composer environments describe $COMPOSER_ENV_NAME \
         --location $REGION_LOCATION --format json | jq -r '.config.gkeCluster')
@@ -47,8 +56,8 @@ GKE_CLUSTER_NAME=$(echo $GKE_CLUSTER_FULL_NAME | awk -F/ '{print $6}')
 GKE_ZONE=$(echo $GKE_CLUSTER_FULL_NAME | awk -F/ '{print $4}')
 
 
-ADDT_SN_POOL_NUM_CORES=32
-ADDT_SN_POOL_DISK_SIZE=2000
+ADDT_SN_POOL_NUM_CORES=$ADDT_SN_CORES
+ADDT_SN_POOL_DISK_SIZE=$ADDT_SN_DISK_SIZE
 ADDT_SN_POOL_NAME=osm-addt-sn-pool-${SUFFIX}
 ADDT_SN_POOL_MACHINE_TYPE=n1-highmem-$ADDT_SN_POOL_NUM_CORES
 ADDT_SN_POOL_NUM_NODES=1
@@ -59,6 +68,7 @@ gcloud container node-pools create $ADDT_SN_POOL_NAME \
     --machine-type $ADDT_SN_POOL_MACHINE_TYPE \
     --num-nodes $ADDT_SN_POOL_NUM_NODES \
     --disk-size $ADDT_SN_POOL_DISK_SIZE \
+    --disk-type pd-ssd \
     --scopes gke-default,storage-rw,bigquery
 
 ADDT_SN_POOL_MAX_NUM_TREADS=$((ADDT_SN_POOL_NUM_CORES/4))
@@ -81,11 +91,11 @@ then
     --scopes gke-default,storage-rw
   OSM_TO_FEATURES_POD_REQUESTED_MEMORY=$((OSM_TO_FEATURES_POOL_NUM_CORES*5))G
 else
-  ADDT_MN_POOL_NUM_CORES=8
-  ADDT_MN_POOL_DISK_SIZE=2500
+  ADDT_MN_POOL_NUM_CORES=$ADDT_MN_CORES
+  ADDT_MN_POOL_DISK_SIZE=$ADDT_MN_DISK_SIZE
   ADDT_MN_POOL_NAME=osm-addt-mn-pool-${SUFFIX}
   ADDT_MN_POOL_MACHINE_TYPE=n1-highmem-$ADDT_MN_POOL_NUM_CORES
-  ADDT_MN_POOL_NUM_NODES=14
+  ADDT_MN_POOL_NUM_NODES=$ADDT_MN_NODES
   gcloud container node-pools create $ADDT_MN_POOL_NAME \
       --cluster $GKE_CLUSTER_NAME \
       --project $PROJECT_ID \
@@ -93,6 +103,7 @@ else
       --machine-type $ADDT_MN_POOL_MACHINE_TYPE \
       --num-nodes $ADDT_MN_POOL_NUM_NODES \
       --disk-size $ADDT_MN_POOL_DISK_SIZE \
+      --disk-type pd-ssd \
       --scopes gke-default,storage-rw,bigquery
   ADDT_MN_POD_REQUESTED_MEMORY=$((ADDT_MN_POOL_NUM_CORES*5))G
 fi
