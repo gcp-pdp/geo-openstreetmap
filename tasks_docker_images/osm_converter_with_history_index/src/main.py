@@ -156,8 +156,9 @@ class HistoryHandler(OsmParser):
             value.reset_query_counter()
             value.reset_query_time()
 
+        time_per_query = total_time / total_queries if total_queries > 0 else 0
         logging.info("Executed queries: {}, time: {}. Approx secs/query: {}".format(total_queries, total_time,
-                                                                                    total_time/total_queries))
+                                                                                    time_per_query))
 
     def node(self, node):
         OsmParser.node(self, node)
