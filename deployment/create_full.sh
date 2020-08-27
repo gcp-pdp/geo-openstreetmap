@@ -4,14 +4,17 @@ OSM_MD5_URL="$2"
 REGION_LOCATION="$3"
 SUFFIX="$4"
 
-ADDT_SN_CORES="$5"
-ADDT_SN_DISK_SIZE="$6"
+BASE_COMPOSER_CLUSTER_CORES="$5"
+BASE_COMPOSER_CLUSTER_NODES="$6"
 
-ADDT_MN_CORES="$7"
-ADDT_MN_DISK_SIZE="$8"
-ADDT_MN_NODES="$9"
+ADDT_SN_CORES="$7"
+ADDT_SN_DISK_SIZE="$8"
 
-MODE="$10"
+ADDT_MN_CORES="$8"
+ADDT_MN_DISK_SIZE="$10"
+ADDT_MN_NODES="$11"
+
+MODE="$12"
 
 PROJECT_ID=`gcloud config get-value project`
 
@@ -48,7 +51,9 @@ fi
 COMPOSER_ENV_NAME=osm-to-bq-${SUFFIX}
 gcloud composer environments create $COMPOSER_ENV_NAME \
     --location $REGION_LOCATION \
-    --node-count 6
+    --node-count $BASE_COMPOSER_CLUSTER_NODES \
+    --machine-type n1-highmem-$BASE_COMPOSER_CLUSTER_CORES \
+    --airflow-configs=broker_transport_options-visibility_timeout=2592000
 
 GKE_CLUSTER_FULL_NAME=$(gcloud composer environments describe $COMPOSER_ENV_NAME \
         --location $REGION_LOCATION --format json | jq -r '.config.gkeCluster')
