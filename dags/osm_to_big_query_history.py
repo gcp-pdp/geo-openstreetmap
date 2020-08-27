@@ -5,8 +5,11 @@ import json
 
 from airflow.contrib.operators import kubernetes_pod_operator
 from airflow.contrib.operators import gcs_to_bq
+from airflow.contrib.operators import gcs_delete_operator
+from airflow.operators import python_operator
 
 from utils import gcs_utils
+from utils import metadata_manager
 
 year_start = datetime.datetime(2020, 1, 1)
 
@@ -75,6 +78,15 @@ with airflow.DAG(
         }}
 
 
+    def update_shard_timestamp(entity_type, shard_index, src_osm_uri, num_db_shards, num_results_shards):
+        gcs_bucket, gcs_dir = gcs_utils.parse_uri_to_bucket_and_filename(index_db_and_metadata_dir_gcs_uri)
+
+        metadata = metadata_manager.download_and_read_metadata_file(gcs_bucket, gcs_dir, src_osm_uri,
+                                                                    num_db_shards, num_results_shards)
+        metadata.update_history_result_timestamps(entity_type, shard_index)
+        metadata_manager.save_and_upload_metadata_to_gcs(metadata, gcs_bucket, gcs_dir, (entity_type, shard_index))
+
+
     src_osm_gcs_uri = test_osm_gcs_uri if test_osm_gcs_uri else "gs://{}/{}".format('{{ dag_run.conf.bucket }}',
                                                                                     '{{ dag_run.conf.name }}')
     # TASK #4. osm_converter_with_history_index
@@ -122,10 +134,11 @@ with airflow.DAG(
         generate_history_data_json_tasks.append(generate_history_data_json_task)
 
     generate_history_data_json_tasks_with_downstream = []
+    update_result_shard_timestamp_tasks = []
     for index, generate_history_data_json_task in enumerate(generate_history_data_json_tasks):
         # TASK #5.N. nodes_ways_relations_to_bq
         nodes_ways_relations_elements = ["nodes", "ways", "relations"]
-        nodes_ways_relations_tasks_data = []
+        json_to_bq_tasks = []
 
         schemas = [file_to_json(local_data_dir_path + 'schemas/{}_table_schema.json'.format(element))
                    for element in nodes_ways_relations_elements]
@@ -139,11 +152,11 @@ with airflow.DAG(
 
         for element_and_schema in elements_and_schemas:
             element, schema = element_and_schema
-            task_id = element + '_json_to_bq_{}_{}'.format(index + 1, addt_sn_gke_pool_max_num_treads)
+            task_id = element + '_json_to_bq_{}_{}'.format(index + 1, addt_mn_gke_pool_num_nodes)
             source_object = jsonl_file_names_format.format(element, index)
-            destination_dataset_table = '{}.{}'.format(bq_dataset_to_export, element)
+            destination_dataset_table = '{}.history_{}'.format(bq_dataset_to_export, element)
 
-            task = gcs_to_bq.GoogleCloudStorageToBigQueryOperator(
+            json_to_bq_task = gcs_to_bq.GoogleCloudStorageToBigQueryOperator(
                 task_id=task_id,
                 bucket=src_nodes_ways_relations_gcs_bucket,
                 source_objects=[source_object],
@@ -152,10 +165,26 @@ with airflow.DAG(
                 schema_fields=schema,
                 write_disposition='WRITE_APPEND',
                 max_bad_records=max_bad_records_for_bq_export,
+                retries=5,
                 dag=dag)
-            nodes_ways_relations_tasks_data.append(task)
+            json_to_bq_tasks.append(json_to_bq_task)
+            remove_json_task = gcs_delete_operator.GoogleCloudStorageDeleteOperator(
+                task_id='remove_json-{}-{}-{}'.format(element, index + 1, addt_mn_gke_pool_num_nodes),
+                bucket_name=src_nodes_ways_relations_gcs_bucket,
+                objects=[source_object])
+            json_to_bq_task.set_downstream(remove_json_task)
+
+            update_result_shard_timestamp_task = python_operator.PythonOperator(
+                task_id='update-result-shard-timestamp-{}-{}-{}'.format(element, index + 1,
+                                                                             addt_mn_gke_pool_num_nodes),
+                python_callable=update_shard_timestamp,
+                op_args=[element, index, src_osm_gcs_uri, num_index_db_shards, addt_mn_gke_pool_num_nodes],
+                dag=dag)
+            remove_json_task.set_downstream(update_result_shard_timestamp_task)
+            update_result_shard_timestamp_tasks.append(update_result_shard_timestamp_task)
+
         generate_history_data_json_tasks_with_downstream.append(
-            (generate_history_data_json_task, nodes_ways_relations_tasks_data))
+            (generate_history_data_json_task, json_to_bq_tasks))
 
     # TASK #6. generate_layers
     generate_layers = kubernetes_pod_operator.KubernetesPodOperator(
@@ -172,8 +201,6 @@ with airflow.DAG(
 
     # Graph building
     update_history_index.set_downstream(generate_history_data_json_tasks)
-    upload_to_bq_tasks = []
     for generate_history_data_json_task, downstream_upload_tasks in generate_history_data_json_tasks_with_downstream:
-        upload_to_bq_tasks.extend(downstream_upload_tasks)
         generate_history_data_json_task.set_downstream(downstream_upload_tasks)
-    generate_layers.set_upstream(upload_to_bq_tasks)
+    generate_layers.set_upstream(update_result_shard_timestamp_tasks)

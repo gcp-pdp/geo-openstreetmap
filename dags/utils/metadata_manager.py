@@ -1,58 +1,42 @@
 import json
 import logging
-import datetime
 import time
 
-import gcs_service
-import file_service
+from utils import gcs_utils
 
 OSM_ENTITIES = ["nodes", "ways", "relations"]
 
 
-def create_processing_counter():
-    return {key: 0 for key in OSM_ENTITIES}
+def file_name_without_ext(file_name):
+    if "." in file_name:
+        return file_name.split(".")[0]
+    else:
+        return file_name
 
 
-def is_file_fresh(last_updated_timestamp, data_freshness_exp_days):
-    db_freshness = datetime.timedelta(seconds=int(time.time()) - last_updated_timestamp)
-    logging.info("Freshness: {}".format(db_freshness))
-    return db_freshness < datetime.timedelta(days=data_freshness_exp_days)
-
-
-def download_db_if_exists(dbs_file_paths,
-                          dest_bucket,
-                          dest_dir_name):
-    db_gcs_and_local_paths = []
-    for db_file_path in dbs_file_paths:
-        db_name = file_service.file_name_from_path(db_file_path)
-        db_blob_name = dest_dir_name + db_name
-
-        if not gcs_service.is_gcs_blob_exists(dest_bucket, db_blob_name):
-            return False
-        else:
-            db_gcs_and_local_paths.append((db_blob_name, db_file_path))
-
-    for db_blob_name, db_file_path in db_gcs_and_local_paths:
-        gcs_service.from_gcs_to_local_file(dest_bucket, db_blob_name, db_file_path)
-    return True
+def file_name_from_path(file_path):
+    if "/" in file_path:
+        return file_path.split("/")[-1]
+    else:
+        return file_path
 
 
 def get_index_metadata_file_path(src_osm_name, num_db_shards):
-    return file_service.file_name_without_ext(src_osm_name) + "_{}_index_shards.metadata.txt".format(num_db_shards)
+    return file_name_without_ext(src_osm_name) + "_{}_index_shards.metadata.txt".format(num_db_shards)
 
 
 def get_result_shard_metadata_file_path(src_osm_name, entity_type, index, num_results_shards):
-    return file_service.file_name_without_ext(src_osm_name) + "_{}_{}_{}.metadata.txt".format(entity_type, index + 1,
+    return file_name_without_ext(src_osm_name) + "_{}_{}_{}.metadata.txt".format(entity_type, index + 1,
                                                                                               num_results_shards)
 
 
 def download_and_read_metadata_file(gcs_bucket, gcs_dir_name, src_osm_name, num_db_shards, num_results_shards):
-    src_osm_file_name = file_service.file_name_from_path(src_osm_name)
+    src_osm_file_name = file_name_from_path(src_osm_name)
 
     index_metadata_file_path = get_index_metadata_file_path(src_osm_file_name, num_db_shards)
     index_metadata_blob_name = gcs_dir_name + index_metadata_file_path
-    if gcs_service.is_gcs_blob_exists(gcs_bucket, index_metadata_blob_name):
-        gcs_service.from_gcs_to_local_file(gcs_bucket, index_metadata_blob_name, index_metadata_file_path)
+    if gcs_utils.is_gcs_blob_exists(gcs_bucket, index_metadata_blob_name):
+        gcs_utils.from_gcs_to_local_file(gcs_bucket, index_metadata_blob_name, index_metadata_file_path)
 
     shards_metadata_files = {}
     for entity in OSM_ENTITIES:
@@ -61,8 +45,8 @@ def download_and_read_metadata_file(gcs_bucket, gcs_dir_name, src_osm_name, num_
             result_shard_metadata_file_path = get_result_shard_metadata_file_path(src_osm_file_name, entity, index,
                                                                                   num_results_shards)
             result_shard_metadata_blob_name = gcs_dir_name + result_shard_metadata_file_path
-            if gcs_service.is_gcs_blob_exists(gcs_bucket, result_shard_metadata_blob_name):
-                gcs_service.from_gcs_to_local_file(gcs_bucket, result_shard_metadata_blob_name,
+            if gcs_utils.is_gcs_blob_exists(gcs_bucket, result_shard_metadata_blob_name):
+                gcs_utils.from_gcs_to_local_file(gcs_bucket, result_shard_metadata_blob_name,
                                                    result_shard_metadata_file_path)
             shards_metadata_files_by_entity[str(index)] = result_shard_metadata_file_path
         shards_metadata_files[entity] = shards_metadata_files_by_entity

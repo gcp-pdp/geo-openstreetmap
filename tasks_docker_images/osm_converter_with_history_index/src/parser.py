@@ -25,8 +25,11 @@ class OsmParser(osmium.SimpleHandler):
         self.pool_index = pool_index
         self.pool_size = pool_size
 
+    def current_pool_index(self):
+        return self.processing_counter[self.current_entity_type] % self.pool_size
+
     def is_item_index_for_current_pool_index(self):
-        return self.processing_counter[self.current_entity_type] % self.pool_size == self.pool_index
+        return self.current_pool_index() == self.pool_index
 
     def log_processing(self):
         self.processing_counter[self.current_entity_type] = self.processing_counter[self.current_entity_type] + 1
