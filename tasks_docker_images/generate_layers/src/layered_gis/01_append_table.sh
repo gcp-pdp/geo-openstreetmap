@@ -1,4 +1,5 @@
 #!/bin/bash
+PROCESSING_MODE="$1"
 
 i=0
 mode=""
@@ -17,7 +18,7 @@ for SQL in `find ../sql/ -type f -name '*.sql' | sort`; do
   --range_partitioning 'layer_code,0,9999,1'\
   --clustering_fields 'layer_code,geometry'\
   --display_name $SQL\
-  --destination_table '${PROJECT_ID}:${BQ_DATASET_TO_EXPORT}.layers'\
+  --destination_table '${PROJECT_ID}:${BQ_DATASET_TO_EXPORT}.${PROCESSING_MODE}_layers'\
   --destination_schema ../schema/layers_schema.json >/dev/null"
 
   echo "$cmd"

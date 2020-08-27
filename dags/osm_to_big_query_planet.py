@@ -29,7 +29,7 @@ additional_gke_pool_pod_max_num_treads = os.environ.get('ADDT_SN_GKE_POOL_MAX_NU
 generate_layers_image = os.environ.get('GENERATE_LAYERS_IMAGE')
 test_osm_gcs_uri = os.environ.get('TEST_OSM_GCS_URI')
 
-feature_union_bq_table_name = "feature_union"
+feature_union_bq_table_name = "planet_features"
 json_results_gcs_uri = "gs://{}/results_jsonl/".format(gcs_work_bucket)
 
 local_data_dir_path = "/home/airflow/gcs/dags/"
@@ -114,7 +114,7 @@ with airflow.DAG(
     for feature in features:
         task_id = feature + '_feature_json_to_bq'
         source_object = jsonl_file_names_format.format(feature)
-        destination_dataset_table = '{}.feature_{}'.format(bq_dataset_to_export, feature)
+        destination_dataset_table = '{}.planet_features_{}'.format(bq_dataset_to_export, feature)
 
         task = gcs_to_bq.GoogleCloudStorageToBigQueryOperator(
             task_id=task_id,
@@ -175,7 +175,7 @@ with airflow.DAG(
         element, schema = element_and_schema
         task_id = element + '_json_to_bq'
         source_object = jsonl_file_names_format.format(element)
-        destination_dataset_table = '{}.{}'.format(bq_dataset_to_export, element)
+        destination_dataset_table = '{}.planet_{}'.format(bq_dataset_to_export, element)
 
         task = gcs_to_bq.GoogleCloudStorageToBigQueryOperator(
             task_id=task_id,
