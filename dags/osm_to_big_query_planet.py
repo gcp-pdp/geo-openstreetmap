@@ -17,8 +17,9 @@ project_id = os.environ.get('PROJECT_ID')
 bq_dataset_to_export = os.environ.get('BQ_DATASET_TO_EXPORT')
 
 osm_to_features_image = os.environ.get('OSM_TO_FEATURES_IMAGE')
-osm_to_features_gke_pool = os.environ.get('OSM_TO_FEATURES_GKE_POOL')
-osm_to_features_gke_pod_requested_memory = os.environ.get('OSM_TO_FEATURES_GKE_POD_REQUESTED_MEMORY')
+
+addt_mn_gke_pool = os.environ.get('ADDT_MN_GKE_POOL')
+addt_mn_pod_requested_memory = os.environ.get('ADDT_MN_POD_REQUESTED_MEMORY')
 
 gcs_work_bucket = os.environ.get('GCS_WORK_BUCKET')
 osm_to_nodes_ways_relations_image = os.environ.get('OSM_TO_NODES_WAYS_RELATIONS_IMAGE')
@@ -98,8 +99,8 @@ with airflow.DAG(
                       'FEATURES_DIR_GCS_URI': json_results_gcs_uri,
                       'LAYERS': layers},
             image=osm_to_features_image,
-            resources={"request_memory": osm_to_features_gke_pod_requested_memory},
-            affinity=create_gke_affinity_with_pool_name(osm_to_features_gke_pool),
+            resources={"request_memory": addt_mn_pod_requested_memory},
+            affinity=create_gke_affinity_with_pool_name(addt_mn_gke_pool),
             execution_timeout=datetime.timedelta(days=4)
         )
 

@@ -102,7 +102,7 @@ class ProcessingMetadata(object):
             shards_timestamps_by_entity = {}
             for index_str, shards_metadata_file in shards_metadata_files_by_entity.items():
                 try:
-                    with open(index_metadata_file_path, "r") as f:
+                    with open(shards_metadata_file, "r") as f:
                         metadata_json = json.load(f)
                     shards_timestamps_by_entity[index_str] = FileTimestamps(metadata_json)
                 except Exception as e:
@@ -147,7 +147,7 @@ class ProcessingMetadata(object):
                 for shard_index_str, shard_timestamps in shards_timestamps_by_entity.items():
                     if not specific_history_results_shards_to_save or (
                             entity == specific_history_results_shards_to_save[0] and int(shard_index_str) ==
-                            specific_history_results_shards_to_save[1]):
+                            int(specific_history_results_shards_to_save[1])):
                         shard_file = self.shards_metadata_files[entity][shard_index_str]
                         with open(shard_file, "w") as f:
                             json.dump(shard_timestamps.to_dict(), f)
@@ -164,7 +164,7 @@ class ProcessingMetadata(object):
     def to_dict(self):
         history_results = {}
         for entity, shards_timestamps_by_entity in self.shards_timestamps.items():
-            history_results[entity] = {shard_index_str: shard_timestamps.to_dict for shard_index_str, shard_timestamps
+            history_results[entity] = {shard_index_str: shard_timestamps.to_dict() for shard_index_str, shard_timestamps
                                        in
                                        shards_timestamps_by_entity.items()}
         return {"elements_counter": self.elements_counter.to_dict(),

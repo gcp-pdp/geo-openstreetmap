@@ -25,6 +25,7 @@ addt_sn_gke_pool_max_num_treads = os.environ.get('ADDT_SN_GKE_POOL_MAX_NUM_TREAD
 
 addt_mn_gke_pool = os.environ.get('ADDT_MN_GKE_POOL')
 addt_mn_gke_pool_num_nodes = os.environ.get('ADDT_MN_GKE_POOL_NUM_NODES')
+addt_mn_pod_requested_memory = os.environ.get('ADDT_MN_POD_REQUESTED_MEMORY')
 
 generate_layers_image = os.environ.get('GENERATE_LAYERS_IMAGE')
 test_osm_gcs_uri = os.environ.get('TEST_OSM_GCS_URI')
@@ -35,7 +36,6 @@ converted_osm_dir_gcs_uri = "gs://{}/converted/".format(gcs_work_bucket)
 index_db_and_metadata_dir_gcs_uri = "gs://{}/index_db_and_metadata/".format(gcs_work_bucket)
 feature_union_bq_table_name = "feature_union"
 
-addt_mn_pod_requested_memory = os.environ.get('ADDT_MN_POD_REQUESTED_MEMORY')
 
 local_data_dir_path = "/home/airflow/gcs/dags/"
 startup_timeout_seconds = 1200
@@ -82,7 +82,7 @@ with airflow.DAG(
         gcs_bucket, gcs_dir = gcs_utils.parse_uri_to_bucket_and_filename(index_db_and_metadata_dir_gcs_uri)
 
         metadata = metadata_manager.download_and_read_metadata_file(gcs_bucket, gcs_dir, src_osm_uri,
-                                                                    num_db_shards, num_results_shards)
+                                                                    int(num_db_shards), int(num_results_shards))
         metadata.update_history_result_timestamps(entity_type, shard_index)
         metadata_manager.save_and_upload_metadata_to_gcs(metadata, gcs_bucket, gcs_dir, (entity_type, shard_index))
 

@@ -26,10 +26,6 @@ if __name__ == '__main__':
     parser.add_argument('--generate_layers_image', help='generate_layers image name', required=True)
     parser.add_argument('--osm_converter_with_history_index_image',
                         help='osm_converter_with_history_index_image image name', required=True)
-
-    parser.add_argument('--osm_to_features_gke_pool', help='osm_to_features GKE pool name', required=True)
-    parser.add_argument('--osm_to_features_gke_pod_requested_memory', help='osm_to_features GKE POD requested memory',
-                        required=True)
     parser.add_argument('--addt_sn_gke_pool', help='GKE pool name for additional operations (single node pool)',
                         required=True)
     parser.add_argument('--addt_sn_gke_pool_max_num_treads', help='Maximum number of threads for addt_sn_gke_pool',
