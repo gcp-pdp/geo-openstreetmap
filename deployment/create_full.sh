@@ -13,29 +13,33 @@ BASE_COMPOSER_CLUSTER_NODES="$7"
 ADDT_SN_CORES="$8"
 ADDT_SN_DISK_SIZE="$9"
 
-ADDT_MN_CORES="$10"
-ADDT_MN_DISK_SIZE="$11"
-ADDT_MN_NODES="$12"
+ADDT_MN_CORES="${10}"
+ADDT_MN_DISK_SIZE="${11}"
+ADDT_MN_NODES="${12}"
 
-MODE="$13"
+MODE="${13}"
 
 # 2. Print all parameters
-echo $@
+for PARAM in "$@"; do
+  echo "$PARAM"
+done
 
 # 3. Retrieve PROJECT_ID
 PROJECT_ID=`gcloud config get-value project`
 
 # 4. Create GCS buckets
 TRANSFER_BUCKET_NAME=${PROJECT_ID}-transfer-${SUFFIX}
-#gsutil mb gs://${TRANSFER_BUCKET_NAME}/
+gsutil mb gs://${TRANSFER_BUCKET_NAME}/
 
 WORK_BUCKET_NAME=${PROJECT_ID}-work-${SUFFIX}
-#gsutil mb gs://${WORK_BUCKET_NAME}/
+gsutil mb gs://${WORK_BUCKET_NAME}/
 
 # 5. Create BigQuery dataset
-#BQ_DATASET=osm_to_bq_${SUFFIX}
-#bq mk ${PROJECT_ID}:${BQ_DATASET}
-BQ_DATASET=bigquery-public-data:geo_openstreetmap
+BQ_DATASET_SHORT=osm_to_bq_${SUFFIX}
+BQ_DATASET=${PROJECT_ID}.${BQ_DATASET_SHORT}
+bq mk ${PROJECT_ID}:${BQ_DATASET_SHORT}
+#TODO temp
+#BQ_DATASET=bigquery-public-data.geo_openstreetmap
 
 # 6. Build and push to Container Registry Docker containers
 IMAGE_HOSTNAME=gcr.io
@@ -61,34 +65,24 @@ fi
 
 # 7. Create Cloud Composer environment
 COMPOSER_ENV_NAME=osm-to-bq-${SUFFIX}
-#gcloud composer environments create $COMPOSER_ENV_NAME \
-#    --location $REGION_LOCATION \
-#    --zone $ZONE \
-#    --node-count $BASE_COMPOSER_CLUSTER_NODES \
-#    --machine-type $BASE_COMPOSER_CLUSTER_MACHINE_TYPE \
-#    --airflow-configs=broker_transport_options-visibility_timeout=2592000
+gcloud composer environments create $COMPOSER_ENV_NAME \
+    --location $REGION_LOCATION \
+    --zone $ZONE \
+    --node-count $BASE_COMPOSER_CLUSTER_NODES \
+    --machine-type $BASE_COMPOSER_CLUSTER_MACHINE_TYPE \
+    --airflow-configs=broker_transport_options-visibility_timeout=2592000
 
 # 8. Retrieve Cloud Composer environment's params
 GKE_CLUSTER_FULL_NAME=$(gcloud composer environments describe $COMPOSER_ENV_NAME \
         --location $REGION_LOCATION --format json | jq -r '.config.gkeCluster')
 GKE_CLUSTER_NAME=$(echo $GKE_CLUSTER_FULL_NAME | awk -F/ '{print $6}')
-GKE_ZONE=$(echo $GKE_CLUSTER_FULL_NAME | awk -F/ '{print $4}')
 
-# 9. Create additional Kubernetes clusters pools
+# 9. Define additional Kubernetes clusters parameters
 ADDT_SN_POOL_NUM_CORES=$ADDT_SN_CORES
 ADDT_SN_POOL_DISK_SIZE=$ADDT_SN_DISK_SIZE
 ADDT_SN_POOL_NAME=osm-addt-sn-pool-${SUFFIX}
 ADDT_SN_POOL_MACHINE_TYPE=n1-highmem-$ADDT_SN_POOL_NUM_CORES
 ADDT_SN_POOL_NUM_NODES=1
-#gcloud container node-pools create $ADDT_SN_POOL_NAME \
-#    --cluster $GKE_CLUSTER_NAME \
-#    --project $PROJECT_ID \
-#    --zone $GKE_ZONE \
-#    --machine-type $ADDT_SN_POOL_MACHINE_TYPE \
-#    --num-nodes $ADDT_SN_POOL_NUM_NODES \
-#    --disk-size $ADDT_SN_POOL_DISK_SIZE \
-#    --disk-type pd-ssd \
-#    --scopes gke-default,storage-rw,bigquery
 ADDT_SN_POOL_MAX_NUM_TREADS=$((ADDT_SN_POOL_NUM_CORES/4))
 
 
@@ -97,21 +91,13 @@ ADDT_MN_POOL_DISK_SIZE=$ADDT_MN_DISK_SIZE
 ADDT_MN_POOL_NAME=osm-addt-mn-pool-${SUFFIX}
 ADDT_MN_POOL_MACHINE_TYPE=n1-highmem-$ADDT_MN_POOL_NUM_CORES
 ADDT_MN_POOL_NUM_NODES=$ADDT_MN_NODES
-#gcloud container node-pools create $ADDT_MN_POOL_NAME \
-#    --cluster $GKE_CLUSTER_NAME \
-#    --project $PROJECT_ID \
-#    --zone $GKE_ZONE \
-#    --machine-type $ADDT_MN_POOL_MACHINE_TYPE \
-#    --num-nodes $ADDT_MN_POOL_NUM_NODES \
-#    --disk-size $ADDT_MN_POOL_DISK_SIZE \
-#    --disk-type pd-ssd \
-#    --scopes gke-default,storage-rw,bigquery
-ADDT_MN_POD_REQUESTED_MEMORY=$((ADDT_MN_POOL_NUM_CORES*5))G
+ADDT_MN_POD_REQUESTED_MEMORY=$((ADDT_MN_POOL_NUM_CORES*4))G
 
 # 10. Build config file with Cloud Composer env vars
 CONFIG_FILE=deployment/config/config_${SUFFIX}.json
 python3 deployment/config/generate_config.py $CONFIG_FILE \
     --project_id=$PROJECT_ID \
+    --zone=$ZONE \
     --osm_url=$OSM_URL \
     --osm_md5_url=$OSM_MD5_URL \
     --gcs_transfer_bucket=$TRANSFER_BUCKET_NAME \
@@ -121,10 +107,16 @@ python3 deployment/config/generate_config.py $CONFIG_FILE \
     --osm_to_nodes_ways_relations_image=$OSM_TO_NODES_WAYS_RELATIONS_IMAGE \
     --generate_layers_image=$GENERATE_LAYERS_IMAGE \
     --osm_converter_with_history_index_image=$OSM_CONVERTER_WITH_HISTORY_INDEX_IMAGE \
+    --gke_main_cluster_name=$GKE_CLUSTER_NAME \
     --addt_sn_gke_pool=$ADDT_SN_POOL_NAME \
-    --addt_sn_gke_pool_max_num_treads=$ADDT_SN_POOL_MAX_NUM_TREADS \
+    --addt_sn_pool_machine_type=$ADDT_SN_POOL_MACHINE_TYPE \
+    --addt_sn_pool_disk_size=$ADDT_SN_POOL_DISK_SIZE \
+    --addt_sn_pool_num_nodes=$ADDT_SN_POOL_NUM_NODES \
+    --addt_sn_pool_max_num_treads=$ADDT_SN_POOL_MAX_NUM_TREADS \
     --addt_mn_gke_pool=$ADDT_MN_POOL_NAME \
-    --addt_mn_gke_pool_num_nodes=$ADDT_MN_POOL_NUM_NODES \
+    --addt_mn_pool_machine_type=$ADDT_MN_POOL_MACHINE_TYPE \
+    --addt_mn_pool_disk_size=$ADDT_MN_POOL_DISK_SIZE \
+    --addt_mn_pool_num_nodes=$ADDT_MN_POOL_NUM_NODES \
     --addt_mn_pod_requested_memory=$ADDT_MN_POD_REQUESTED_MEMORY \
     --bq_dataset_to_export=$BQ_DATASET
 
