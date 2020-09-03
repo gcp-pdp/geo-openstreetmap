@@ -1,11 +1,11 @@
 common_query() {
 echo "
 WITH osm AS (
-  SELECT id, null AS way_id, all_tags, osm_timestamp, geometry FROM \`${PROJECT_ID}.${BQ_DATASET_TO_EXPORT}.nodes\`
+  SELECT id, null AS way_id, all_tags, osm_timestamp, version, geometry FROM \`${BQ_DATASET_TO_EXPORT}.history_nodes\`
   UNION ALL
-  SELECT id, id AS way_id, all_tags, osm_timestamp, geometry FROM \`${PROJECT_ID}.${BQ_DATASET_TO_EXPORT}.ways\`
+  SELECT id, id AS way_id, all_tags, osm_timestamp, version, geometry FROM \`${BQ_DATASET_TO_EXPORT}.history_ways\`
   UNION ALL
-  SELECT id, null AS way_id, all_tags, osm_timestamp, geometry FROM \`${PROJECT_ID}.${BQ_DATASET_TO_EXPORT}.relations\`
+  SELECT id, null AS way_id, all_tags, osm_timestamp, version, geometry FROM \`${BQ_DATASET_TO_EXPORT}.history_relations\`
 )
 SELECT
 $CODE AS layer_code,
@@ -14,6 +14,7 @@ $CODE AS layer_code,
 osm.id  AS osm_id,
 osm.way_id AS osm_way_id,
 osm.osm_timestamp AS osm_timestamp,
+osm.version AS osm_version,
 osm.all_tags,
 osm.geometry
 FROM osm
