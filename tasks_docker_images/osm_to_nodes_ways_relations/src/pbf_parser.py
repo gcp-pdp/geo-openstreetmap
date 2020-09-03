@@ -31,7 +31,7 @@ def osm_entity_to_dict_full(osm_entity):
 
 
 def osm_entity_node_dict(osm_node_entity):
-    base_dict = osm_entity_to_dict(osm_node_entity)
+    base_dict = osm_entity_to_dict_full(osm_node_entity)
     if osm_node_entity.location.valid():
         base_dict["latitude"] = osm_node_entity.location.lat
         base_dict["longitude"] = osm_node_entity.location.lon
