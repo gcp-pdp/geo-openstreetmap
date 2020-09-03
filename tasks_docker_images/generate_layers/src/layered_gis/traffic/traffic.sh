@@ -14,7 +14,8 @@ LAYER=(
         "5208:highway=speed_camera"
         "5209:highway=street_lamp"
         "5250:amenity=fuel"
-        "5251:highway=services>service"
+        "5251:highway=services>services"
+        "5251:highway=service>service"
         "5270:amenity=bicycle_parking"
 )
 

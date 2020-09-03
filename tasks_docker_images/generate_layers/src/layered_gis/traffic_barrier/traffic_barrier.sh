@@ -27,7 +27,7 @@ do
   N="${F%%-*}"
   NAME_PREFIX=barrier_
   EXTRA_CONSTRAINTS="AND EXISTS(SELECT 1 FROM UNNEST(osm.all_tags) as tags WHERE tags.key = '$K' AND tags.value='$V')"
-  common_query > "$NAME_PREFIX$F.sql"
+  common_query > "../../sql/$NAME_PREFIX$F.sql"
 done
 
 CODE=5210
