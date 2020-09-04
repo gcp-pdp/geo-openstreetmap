@@ -7,10 +7,10 @@ from airflow.contrib.operators import kubernetes_pod_operator
 from airflow.contrib.operators import gcs_to_bq
 from airflow.contrib.operators import gcs_delete_operator
 from airflow.operators import python_operator
-from airflow.operators import bash_operator
 
 from utils import gcs_utils
 from utils import metadata_manager
+from utils import tasks_manager
 
 year_start = datetime.datetime(2020, 1, 1)
 
@@ -57,23 +57,7 @@ default_args = {
 
 max_bad_records_for_bq_export = 10000
 
-create_additional_pool_cmd = '''
-    gcloud container node-pools create {{ params.POOL_NAME }} \
-        --cluster {{ params.GKE_CLUSTER_NAME }} \
-        --project {{ params.PROJECT_ID }} \
-        --zone {{ params.GKE_ZONE }} \
-        --machine-type {{ params.POOL_MACHINE_TYPE }} \
-        --num-nodes {{ params.POOL_NUM_NODES }} \
-        --disk-size {{ params.POOL_DISK_SIZE }} \
-        --disk-type pd-ssd \
-        --scopes gke-default,storage-rw,bigquery
-'''
-delete_additional_pool_cmd = '''
-    gcloud container node-pools delete {{ params.POOL_NAME }} \
-        --zone {{ params.GKE_ZONE }} \
-        --cluster {{ params.GKE_CLUSTER_NAME }} \
-        -q
-'''
+
 with airflow.DAG(
         'osm_to_big_query_history',
         catchup=False,
@@ -113,33 +97,23 @@ with airflow.DAG(
         metadata_manager.save_and_upload_metadata_to_gcs(metadata, gcs_bucket, gcs_dir, (entity_type, shard_index))
 
 
-    # TASK #1. update-history-index
-    create_sn_additional_pool_task = bash_operator.BashOperator(task_id="create-sn-additional-pool",
-                                                                bash_command=create_additional_pool_cmd,
-                                                                params={"POOL_NAME": addt_sn_gke_pool,
-                                                                        "GKE_CLUSTER_NAME": gke_main_cluster_name,
-                                                                        "PROJECT_ID": project_id,
-                                                                        "GKE_ZONE": gke_zone,
-                                                                        "POOL_MACHINE_TYPE": addt_sn_gke_pool_machine_type,
-                                                                        "POOL_NUM_NODES": addt_sn_gke_pool_num_nodes,
-                                                                        "POOL_DISK_SIZE": addt_sn_gke_pool_disk_size
-                                                                        })
-    # TASK #2. update-history-index
-    create_mn_additional_pool_task = bash_operator.BashOperator(task_id="create-mn-additional-pool",
-                                                                bash_command=create_additional_pool_cmd,
-                                                                params={"POOL_NAME": addt_mn_gke_pool,
-                                                                        "GKE_CLUSTER_NAME": gke_main_cluster_name,
-                                                                        "PROJECT_ID": project_id,
-                                                                        "GKE_ZONE": gke_zone,
-                                                                        "POOL_MACHINE_TYPE": addt_mn_gke_pool_machine_type,
-                                                                        "POOL_NUM_NODES": addt_mn_gke_pool_num_nodes,
-                                                                        "POOL_DISK_SIZE": addt_mn_gke_pool_disk_size
-                                                                        })
-    create_mn_additional_pool_task.set_upstream(create_sn_additional_pool_task)
+    gke_config = tasks_manager.GKEConfig(project_id=project_id,
+                                         cluster_name=gke_main_cluster_name,
+                                         zone=gke_zone)
 
-    # TASK #3. update-history-index
     src_osm_gcs_uri = test_osm_gcs_uri if test_osm_gcs_uri else "gs://{}/{}".format('{{ dag_run.conf.bucket }}',
                                                                                     '{{ dag_run.conf.name }}')
+
+    # TASK #1. update-history-index
+    sn_additional_pool_task_fabric = \
+        tasks_manager.CreateAdditionalPoolTaskFabric(gke_config=gke_config,
+                                                     pool_name=addt_sn_gke_pool,
+                                                     machine_type=addt_sn_gke_pool_machine_type,
+                                                     num_nodes=addt_sn_gke_pool_num_nodes,
+                                                     disk_size=addt_sn_gke_pool_disk_size)
+    create_sn_additional_pool_task = sn_additional_pool_task_fabric.create_task()
+
+    # TASK #2. update-history-index
     create_index_mode_additional_args = "--create_index_mode"
     update_history_index_task = kubernetes_pod_operator.KubernetesPodOperator(
         task_id='update-history-index',
@@ -158,7 +132,15 @@ with airflow.DAG(
         affinity=create_gke_affinity_with_pool_name(addt_sn_gke_pool),
         execution_timeout=datetime.timedelta(days=3)
     )
-    update_history_index_task.set_upstream(create_mn_additional_pool_task)
+
+    # TASK #3. update-history-index
+    mn_additional_pool_task_fabric = \
+        tasks_manager.CreateAdditionalPoolTaskFabric(gke_config=gke_config,
+                                                     pool_name=addt_mn_gke_pool,
+                                                     machine_type=addt_mn_gke_pool_machine_type,
+                                                     num_nodes=addt_mn_gke_pool_num_nodes,
+                                                     disk_size=addt_mn_gke_pool_disk_size)
+    create_mn_additional_pool_task = mn_additional_pool_task_fabric.create_task()
 
     # TASK #4.x. generate-history-data-json
     generate_history_data_json_tasks = []
@@ -184,11 +166,17 @@ with airflow.DAG(
             execution_timeout=datetime.timedelta(days=15)
         )
         generate_history_data_json_tasks.append(generate_history_data_json_task)
-    update_history_index_task.set_downstream(generate_history_data_json_tasks)
 
-    # TASK #5.x. nodes_ways_relations_to_bq
+    # TASK #5. generate_layers
+    delete_mn_additional_pool_task_fabric = \
+        tasks_manager.DeleteAdditionalPoolTaskFabric(gke_config=gke_config,
+                                                     pool_name=addt_mn_gke_pool)
+    delete_mn_additional_pool_task = delete_mn_additional_pool_task_fabric.create_task()
+
+    # TASK #6.x. nodes_ways_relations_to_bq
     generate_history_data_json_tasks_with_downstream = []
-    update_result_shard_timestamp_tasks = []
+
+    json_processing_task_chains = []
     for index, generate_history_data_json_task in enumerate(generate_history_data_json_tasks):
         nodes_ways_relations_elements = ["nodes", "ways", "relations"]
         json_to_bq_tasks = []
@@ -225,7 +213,6 @@ with airflow.DAG(
                 task_id='remove_json-{}-{}-{}'.format(element, index + 1, addt_mn_gke_pool_num_nodes),
                 bucket_name=src_nodes_ways_relations_gcs_bucket,
                 objects=[source_object])
-            json_to_bq_task.set_downstream(remove_json_task)
 
             update_result_shard_timestamp_task = python_operator.PythonOperator(
                 task_id='update-result-shard-timestamp-{}-{}-{}'.format(element, index + 1,
@@ -233,15 +220,13 @@ with airflow.DAG(
                 python_callable=update_shard_timestamp,
                 op_args=[element, index, src_osm_gcs_uri, num_index_db_shards, addt_mn_gke_pool_num_nodes],
                 dag=dag)
-            remove_json_task.set_downstream(update_result_shard_timestamp_task)
-            update_result_shard_timestamp_tasks.append(update_result_shard_timestamp_task)
+
+            json_processing_task_chains.append((json_to_bq_tasks, remove_json_task, update_result_shard_timestamp_task))
 
         generate_history_data_json_tasks_with_downstream.append(
             (generate_history_data_json_task, json_to_bq_tasks))
-    for generate_history_data_json_task, downstream_upload_tasks in generate_history_data_json_tasks_with_downstream:
-        generate_history_data_json_task.set_downstream(downstream_upload_tasks)
 
-    # TASK #6. generate_layers
+    # TASK #7. generate_layers
     generate_layers = kubernetes_pod_operator.KubernetesPodOperator(
         task_id='generate-layers',
         name='generate-layers',
@@ -253,22 +238,25 @@ with airflow.DAG(
         image=generate_layers_image,
         affinity=create_gke_affinity_with_pool_name(addt_sn_gke_pool),
         execution_timeout=datetime.timedelta(days=2))
-    generate_layers.set_upstream(update_result_shard_timestamp_tasks)
 
-    # TASK #7. delete_sn_additional_pool
-    delete_sn_additional_pool_task = bash_operator.BashOperator(task_id="delete-sn-additional-pool",
-                                                                bash_command=delete_additional_pool_cmd,
-                                                                params={"POOL_NAME": addt_sn_gke_pool,
-                                                                        "GKE_CLUSTER_NAME": gke_main_cluster_name,
-                                                                        "GKE_ZONE": gke_zone},
-                                                                trigger_rule="all_done")
-    delete_sn_additional_pool_task.set_upstream(generate_layers)
+    # TASK #8. delete_sn_additional_pool
+    delete_sn_additional_pool_task_fabric = \
+        tasks_manager.DeleteAdditionalPoolTaskFabric(gke_config=gke_config,
+                                                     pool_name=addt_sn_gke_pool)
+    delete_sn_additional_pool_task = delete_sn_additional_pool_task_fabric.create_task()
 
-    # TASK #8. generate_layers
-    delete_mn_additional_pool_task = bash_operator.BashOperator(task_id="delete-mn-additional-pool",
-                                                                bash_command=delete_additional_pool_cmd,
-                                                                params={"POOL_NAME": addt_mn_gke_pool,
-                                                                        "GKE_CLUSTER_NAME": gke_main_cluster_name,
-                                                                        "GKE_ZONE": gke_zone},
-                                                                trigger_rule="all_done")
-    delete_mn_additional_pool_task.set_upstream(delete_sn_additional_pool_task)
+    # Building graph
+    create_sn_additional_pool_task >> update_history_index_task >> create_mn_additional_pool_task
+    create_mn_additional_pool_task >> generate_history_data_json_tasks
+
+    for generate_history_data_json_task, json_to_bq_tasks in generate_history_data_json_tasks_with_downstream:
+        generate_history_data_json_task >> json_to_bq_tasks
+
+    for json_to_bq_task, delete_json_task, update_result_shard_timestamp_task in json_processing_task_chains:
+        json_to_bq_task >> delete_json_task >> update_result_shard_timestamp_task
+
+    update_result_shard_timestamp_tasks = [update_result_shard_timestamp_task
+                                           for _, _, update_result_shard_timestamp_task in json_processing_task_chains]
+
+    update_result_shard_timestamp_tasks >> generate_layers >> delete_sn_additional_pool_task
+
