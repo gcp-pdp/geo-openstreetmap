@@ -184,7 +184,7 @@ with airflow.DAG(
 
     # TASK #5. feature_union
     create_features_part_format = file_to_text(local_data_dir_path + 'sql/create_features_part_format.sql')
-    create_features_queries = [create_features_part_format.format(task_tuple[1], project_id, task_tuple[2])
+    create_features_queries = [create_features_part_format.format(task_tuple[1], task_tuple[2])
                                for task_tuple in features_to_bq_tasks_data]
     feature_union_query = bq_utils.union_queries(create_features_queries)
 

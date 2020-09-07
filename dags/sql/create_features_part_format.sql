@@ -7,4 +7,4 @@ SELECT
   all_tags,
   geometry
 FROM
-  {}.{}
+  {}

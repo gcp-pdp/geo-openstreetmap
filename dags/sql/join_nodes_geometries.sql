@@ -1,6 +1,6 @@
 SELECT
     osmium_table.id,
-    osmium_table.osm_version,
+    osmium_table.version,
     osmium_table.username,
     osmium_table.changeset,
     osmium_table.visible,
