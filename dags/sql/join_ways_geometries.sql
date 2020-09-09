@@ -13,4 +13,4 @@ FROM
 LEFT JOIN
   {}.planet_features AS gdal_table
 ON
-  osmium_table.id = gdal_table.osm_id AND osmium_table.osm_timestamp = gdal_table.osm_timestamp
+  (osmium_table.id = gdal_table.osm_id OR osmium_table.id = gdal_table.osm_way_id) AND osmium_table.osm_timestamp = gdal_table.osm_timestamp
