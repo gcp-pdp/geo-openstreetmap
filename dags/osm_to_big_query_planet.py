@@ -262,7 +262,7 @@ with airflow.DAG(
         join_geometries_format = file_to_text(local_data_dir_path + 'sql/join_{}_geometries.sql'.format(element))
         join_geometries_query = join_geometries_format.format(bq_dataset_to_export, bq_dataset_to_export,
                                                                 bq_dataset_to_export)
-        destination_table = "{}.{}".format(bq_dataset_to_export, "planet__join_{}".format(element))
+        destination_table = "{}.{}".format(bq_dataset_to_export, "planet_{}".format(element))
         join_geometries_task = bigquery_operator.BigQueryOperator(
             task_id='join-{}-geometries'.format(element),
             bql=join_geometries_query,
