@@ -29,17 +29,17 @@ PROJECT_ID=`gcloud config get-value project`
 
 # 4. Create GCS buckets
 TRANSFER_BUCKET_NAME=${PROJECT_ID}-transfer-${SUFFIX}
-#gsutil mb gs://${TRANSFER_BUCKET_NAME}/
+gsutil mb gs://${TRANSFER_BUCKET_NAME}/
 
 WORK_BUCKET_NAME=${PROJECT_ID}-work-${SUFFIX}
-#gsutil mb gs://${WORK_BUCKET_NAME}/
+gsutil mb gs://${WORK_BUCKET_NAME}/
 
 # 5. Create BigQuery dataset
-#BQ_DATASET_SHORT=osm_to_bq_${SUFFIX}
-#BQ_DATASET=${PROJECT_ID}.${BQ_DATASET_SHORT}
-#bq mk ${PROJECT_ID}:${BQ_DATASET_SHORT}
+BQ_DATASET_SHORT=osm_to_bq_${SUFFIX}
+BQ_DATASET=${PROJECT_ID}.${BQ_DATASET_SHORT}
+bq mk ${PROJECT_ID}:${BQ_DATASET_SHORT}
 #TODO temp
-BQ_DATASET=bigquery-public-data.geo_openstreetmap
+#BQ_DATASET=bigquery-public-data.geo_openstreetmap
 
 # 6. Build and push to Container Registry Docker containers
 IMAGE_HOSTNAME=gcr.io
@@ -65,12 +65,12 @@ fi
 
 # 7. Create Cloud Composer environment
 COMPOSER_ENV_NAME=osm-to-bq-${SUFFIX}
-#gcloud composer environments create $COMPOSER_ENV_NAME \
-#    --location $REGION_LOCATION \
-#    --zone $ZONE \
-#    --node-count $BASE_COMPOSER_CLUSTER_NODES \
-#    --machine-type $BASE_COMPOSER_CLUSTER_MACHINE_TYPE \
-#    --airflow-configs=broker_transport_options-visibility_timeout=2592000
+gcloud composer environments create $COMPOSER_ENV_NAME \
+    --location $REGION_LOCATION \
+    --zone $ZONE \
+    --node-count $BASE_COMPOSER_CLUSTER_NODES \
+    --machine-type $BASE_COMPOSER_CLUSTER_MACHINE_TYPE \
+    --airflow-configs=broker_transport_options-visibility_timeout=2592000
 
 # 8. Retrieve Cloud Composer environment's params
 GKE_CLUSTER_FULL_NAME=$(gcloud composer environments describe $COMPOSER_ENV_NAME \
@@ -133,13 +133,13 @@ COMPOSER_WEBSERVER_ID=$(gcloud composer environments describe $COMPOSER_ENV_NAME
 DAG_NAME=osm_to_big_query_${MODE}
 
 TRIGGER_FUNCTION_NAME=trigger_osm_to_big_query_dg_gcf_${SUFFIX}
-#gcloud functions deploy $TRIGGER_FUNCTION_NAME \
-#    --source triggering/trigger_osm_to_big_query_dg_gcf \
-#    --entry-point trigger_dag \
-#    --runtime python37 \
-#    --trigger-resource $TRANSFER_BUCKET_NAME \
-#    --trigger-event google.storage.object.finalize \
-#    --set-env-vars COMPOSER_CLIENT_ID=$COMPOSER_CLIENT_ID,COMPOSER_WEBSERVER_ID=$COMPOSER_WEBSERVER_ID,DAG_NAME=$DAG_NAME
+gcloud functions deploy $TRIGGER_FUNCTION_NAME \
+    --source triggering/trigger_osm_to_big_query_dg_gcf \
+    --entry-point trigger_dag \
+    --runtime python37 \
+    --trigger-resource $TRANSFER_BUCKET_NAME \
+    --trigger-event google.storage.object.finalize \
+    --set-env-vars COMPOSER_CLIENT_ID=$COMPOSER_CLIENT_ID,COMPOSER_WEBSERVER_ID=$COMPOSER_WEBSERVER_ID,DAG_NAME=$DAG_NAME
 
 # 13. Deploy DAG files and its dependencies
 if [ "$MODE" = "planet" ]
