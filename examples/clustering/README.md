@@ -1,59 +1,11 @@
-## Import Glove vectors into BigQuery
-Download word2vec (Glove)
-```
-cd ./data
-wget http://nlp.stanford.edu/data/glove.6B.zip
-unzip ./glove.6B.zip
-rm ./glove.6B.zip
-cd ../
-```
+# Clustering
 
-Convert word2vec to JSONL format
-```
-cat ./data/glove.6B.300d.txt | python3 w2v_to_jsonl.py > ./data/glove.6B.300d.jsonl
-```
-
-Upload result to GCS:
-```
-gsutil cp ./data/glove.6B.300d.jsonl gs://gcp-pdp-osm-dev-bq-import/glove/
-```
-
-Import into BQ:
-```
-bq load \
- --source_format=NEWLINE_DELIMITED_JSON \
- gcp-pdp-osm-dev:osm_clustering.w2v_glove_6B_300d \
- gs://gcp-pdp-osm-dev-bq-import/glove.6B.300d.jsonl \
- "$(python3 w2v_generate_schema.py 300)"
-```
-
-## Prepare grid
-
-```sql
-SELECT
-  *
-FROM `bigquery-public-data.worldpop.population_grid_1km` AS grid,
-gcp-pdp-osm-dev.osm_clustering.cities_circles AS cities
-WHERE last_updated = '2020-01-01'
-AND ST_DWITHIN(cities.center, grid.geog, cities.radius)
-```
-
-## Select objects
-```sql
-SELECT
-  cities.city_name,
-  planet.*
-FROM
-  `bigquery-public-data.geo_openstreetmap.planet_layers` as planet, `gcp-pdp-osm-dev.osm_clustering.cities_circles` as cities
-WHERE ST_DWITHIN(cities.center, planet.geometry, cities.radius)
-```
-
-## Build grid vectors
+## Build vectors for grid cells
 ```sql
 WITH objects_with_vectors AS (SELECT osm_id, geometry, w2v.*
-FROM `gcp-pdp-osm-dev.osm_clustering.cities_c_objects` as objects
+FROM `gcp-pdp-osm-dev.osm_cities.cities_objects` as objects
 JOIN UNNEST(SPLIT(CONCAT(layer_class, "_", layer_name), "_")) as term
-LEFT JOIN `gcp-pdp-osm-dev.osm_clustering.w2v_glove_6B_300d` AS w2v ON term = w2v.word)
+LEFT JOIN `gcp-pdp-osm-dev.words.w2v_glove_6B_300d` AS w2v ON term = w2v.word)
 SELECT
   grid.geo_id,
   SUM(objects.f1)/COUNT(objects.f1) as f1,
@@ -358,7 +310,7 @@ SELECT
   SUM(objects.f300)/COUNT(objects.f300) as f300
 FROM
   objects_with_vectors AS objects,
-  `gcp-pdp-osm-dev.osm_clustering.cities_c_population_grid_05km` as grid
+  `gcp-pdp-osm-dev.osm_cities.cities_population_grid_1km` as grid
 WHERE ST_INTERSECTS(grid.geog, objects.geometry)
 GROUP BY grid.geo_id
 ```
@@ -367,11 +319,11 @@ GROUP BY grid.geo_id
 
 ```sql
 CREATE OR REPLACE MODEL
-  osm_clustering.grid_05km_300d_clusters_10 OPTIONS(model_type='kmeans', num_clusters=10, max_iterations=50, EARLY_STOP=TRUE, MIN_REL_PROGRESS=0.001) AS
+  osm_clustering_grid_1km.kmeans_300d_clusters_10 OPTIONS(model_type='kmeans', num_clusters=10, max_iterations=50, EARLY_STOP=TRUE, MIN_REL_PROGRESS=0.001) AS
 SELECT
   * EXCEPT(geo_id)
 FROM
-  osm_clustering.grid_05km_vectors_300d
+  osm_clustering_grid_1km.vectors_300d
 ```
 
 ## Run city analysis
@@ -396,13 +348,15 @@ WHERE grid.city_name = "Kyiv"
 
 ```sql
 SELECT centroid_id, feature, numerical_value
-FROM ML.CENTROIDS(MODEL `gcp-pdp-osm-dev.osm_clustering.grid_1km_50d_clusters_10`)
+FROM ML.CENTROIDS(MODEL `gcp-pdp-osm-dev.osm_clustering_grid_1km.kmeans_300d_clusters_10`)
 ```
+
+## Create transposed table with centroids features
 
 ```sql
 CALL fhoffa.x.pivot(
-  'gcp-pdp-osm-dev.osm_clustering.grid_1km_300d_clusters_10_centroids' # source table
-  , 'gcp-pdp-osm-dev.osm_clustering.grid_1km_300d_clusters_10_centroids_trans' # destination table
+  'gcp-pdp-osm-dev.osm_clustering_grid_1km.kmeans_300d_clusters_10_centroids' # source table
+  , 'gcp-pdp-osm-dev.osm_clustering_grid_1km.kmeans_300d_clusters_10_centroids_trans' # destination table
   , ['centroid_id'] # row_ids
   , 'feature' # pivot_col_name
   , 'numerical_value' # pivot_col_value
@@ -414,11 +368,13 @@ CALL fhoffa.x.pivot(
 
 ## Cluster description
 
+Calculate cosine similarity between centroids and words vectors.
+
 ```sql
 SELECT a.word, b.centroid_id,
 SAFE_DIVIDE((a.f1*b.e_f1 + a.f2*b.e_f2 + a.f3*b.e_f3 + a.f4*b.e_f4 + a.f5*b.e_f5 + a.f6*b.e_f6 + a.f7*b.e_f7 + a.f8*b.e_f8 + a.f9*b.e_f9 + a.f10*b.e_f10 + a.f11*b.e_f11 + a.f12*b.e_f12 + a.f13*b.e_f13 + a.f14*b.e_f14 + a.f15*b.e_f15 + a.f16*b.e_f16 + a.f17*b.e_f17 + a.f18*b.e_f18 + a.f19*b.e_f19 + a.f20*b.e_f20 + a.f21*b.e_f21 + a.f22*b.e_f22 + a.f23*b.e_f23 + a.f24*b.e_f24 + a.f25*b.e_f25 + a.f26*b.e_f26 + a.f27*b.e_f27 + a.f28*b.e_f28 + a.f29*b.e_f29 + a.f30*b.e_f30 + a.f31*b.e_f31 + a.f32*b.e_f32 + a.f33*b.e_f33 + a.f34*b.e_f34 + a.f35*b.e_f35 + a.f36*b.e_f36 + a.f37*b.e_f37 + a.f38*b.e_f38 + a.f39*b.e_f39 + a.f40*b.e_f40 + a.f41*b.e_f41 + a.f42*b.e_f42 + a.f43*b.e_f43 + a.f44*b.e_f44 + a.f45*b.e_f45 + a.f46*b.e_f46 + a.f47*b.e_f47 + a.f48*b.e_f48 + a.f49*b.e_f49 + a.f50*b.e_f50 + a.f51*b.e_f51 + a.f52*b.e_f52 + a.f53*b.e_f53 + a.f54*b.e_f54 + a.f55*b.e_f55 + a.f56*b.e_f56 + a.f57*b.e_f57 + a.f58*b.e_f58 + a.f59*b.e_f59 + a.f60*b.e_f60 + a.f61*b.e_f61 + a.f62*b.e_f62 + a.f63*b.e_f63 + a.f64*b.e_f64 + a.f65*b.e_f65 + a.f66*b.e_f66 + a.f67*b.e_f67 + a.f68*b.e_f68 + a.f69*b.e_f69 + a.f70*b.e_f70 + a.f71*b.e_f71 + a.f72*b.e_f72 + a.f73*b.e_f73 + a.f74*b.e_f74 + a.f75*b.e_f75 + a.f76*b.e_f76 + a.f77*b.e_f77 + a.f78*b.e_f78 + a.f79*b.e_f79 + a.f80*b.e_f80 + a.f81*b.e_f81 + a.f82*b.e_f82 + a.f83*b.e_f83 + a.f84*b.e_f84 + a.f85*b.e_f85 + a.f86*b.e_f86 + a.f87*b.e_f87 + a.f88*b.e_f88 + a.f89*b.e_f89 + a.f90*b.e_f90 + a.f91*b.e_f91 + a.f92*b.e_f92 + a.f93*b.e_f93 + a.f94*b.e_f94 + a.f95*b.e_f95 + a.f96*b.e_f96 + a.f97*b.e_f97 + a.f98*b.e_f98 + a.f99*b.e_f99 + a.f100*b.e_f100 + a.f101*b.e_f101 + a.f102*b.e_f102 + a.f103*b.e_f103 + a.f104*b.e_f104 + a.f105*b.e_f105 + a.f106*b.e_f106 + a.f107*b.e_f107 + a.f108*b.e_f108 + a.f109*b.e_f109 + a.f110*b.e_f110 + a.f111*b.e_f111 + a.f112*b.e_f112 + a.f113*b.e_f113 + a.f114*b.e_f114 + a.f115*b.e_f115 + a.f116*b.e_f116 + a.f117*b.e_f117 + a.f118*b.e_f118 + a.f119*b.e_f119 + a.f120*b.e_f120 + a.f121*b.e_f121 + a.f122*b.e_f122 + a.f123*b.e_f123 + a.f124*b.e_f124 + a.f125*b.e_f125 + a.f126*b.e_f126 + a.f127*b.e_f127 + a.f128*b.e_f128 + a.f129*b.e_f129 + a.f130*b.e_f130 + a.f131*b.e_f131 + a.f132*b.e_f132 + a.f133*b.e_f133 + a.f134*b.e_f134 + a.f135*b.e_f135 + a.f136*b.e_f136 + a.f137*b.e_f137 + a.f138*b.e_f138 + a.f139*b.e_f139 + a.f140*b.e_f140 + a.f141*b.e_f141 + a.f142*b.e_f142 + a.f143*b.e_f143 + a.f144*b.e_f144 + a.f145*b.e_f145 + a.f146*b.e_f146 + a.f147*b.e_f147 + a.f148*b.e_f148 + a.f149*b.e_f149 + a.f150*b.e_f150 + a.f151*b.e_f151 + a.f152*b.e_f152 + a.f153*b.e_f153 + a.f154*b.e_f154 + a.f155*b.e_f155 + a.f156*b.e_f156 + a.f157*b.e_f157 + a.f158*b.e_f158 + a.f159*b.e_f159 + a.f160*b.e_f160 + a.f161*b.e_f161 + a.f162*b.e_f162 + a.f163*b.e_f163 + a.f164*b.e_f164 + a.f165*b.e_f165 + a.f166*b.e_f166 + a.f167*b.e_f167 + a.f168*b.e_f168 + a.f169*b.e_f169 + a.f170*b.e_f170 + a.f171*b.e_f171 + a.f172*b.e_f172 + a.f173*b.e_f173 + a.f174*b.e_f174 + a.f175*b.e_f175 + a.f176*b.e_f176 + a.f177*b.e_f177 + a.f178*b.e_f178 + a.f179*b.e_f179 + a.f180*b.e_f180 + a.f181*b.e_f181 + a.f182*b.e_f182 + a.f183*b.e_f183 + a.f184*b.e_f184 + a.f185*b.e_f185 + a.f186*b.e_f186 + a.f187*b.e_f187 + a.f188*b.e_f188 + a.f189*b.e_f189 + a.f190*b.e_f190 + a.f191*b.e_f191 + a.f192*b.e_f192 + a.f193*b.e_f193 + a.f194*b.e_f194 + a.f195*b.e_f195 + a.f196*b.e_f196 + a.f197*b.e_f197 + a.f198*b.e_f198 + a.f199*b.e_f199 + a.f200*b.e_f200 + a.f201*b.e_f201 + a.f202*b.e_f202 + a.f203*b.e_f203 + a.f204*b.e_f204 + a.f205*b.e_f205 + a.f206*b.e_f206 + a.f207*b.e_f207 + a.f208*b.e_f208 + a.f209*b.e_f209 + a.f210*b.e_f210 + a.f211*b.e_f211 + a.f212*b.e_f212 + a.f213*b.e_f213 + a.f214*b.e_f214 + a.f215*b.e_f215 + a.f216*b.e_f216 + a.f217*b.e_f217 + a.f218*b.e_f218 + a.f219*b.e_f219 + a.f220*b.e_f220 + a.f221*b.e_f221 + a.f222*b.e_f222 + a.f223*b.e_f223 + a.f224*b.e_f224 + a.f225*b.e_f225 + a.f226*b.e_f226 + a.f227*b.e_f227 + a.f228*b.e_f228 + a.f229*b.e_f229 + a.f230*b.e_f230 + a.f231*b.e_f231 + a.f232*b.e_f232 + a.f233*b.e_f233 + a.f234*b.e_f234 + a.f235*b.e_f235 + a.f236*b.e_f236 + a.f237*b.e_f237 + a.f238*b.e_f238 + a.f239*b.e_f239 + a.f240*b.e_f240 + a.f241*b.e_f241 + a.f242*b.e_f242 + a.f243*b.e_f243 + a.f244*b.e_f244 + a.f245*b.e_f245 + a.f246*b.e_f246 + a.f247*b.e_f247 + a.f248*b.e_f248 + a.f249*b.e_f249 + a.f250*b.e_f250 + a.f251*b.e_f251 + a.f252*b.e_f252 + a.f253*b.e_f253 + a.f254*b.e_f254 + a.f255*b.e_f255 + a.f256*b.e_f256 + a.f257*b.e_f257 + a.f258*b.e_f258 + a.f259*b.e_f259 + a.f260*b.e_f260 + a.f261*b.e_f261 + a.f262*b.e_f262 + a.f263*b.e_f263 + a.f264*b.e_f264 + a.f265*b.e_f265 + a.f266*b.e_f266 + a.f267*b.e_f267 + a.f268*b.e_f268 + a.f269*b.e_f269 + a.f270*b.e_f270 + a.f271*b.e_f271 + a.f272*b.e_f272 + a.f273*b.e_f273 + a.f274*b.e_f274 + a.f275*b.e_f275 + a.f276*b.e_f276 + a.f277*b.e_f277 + a.f278*b.e_f278 + a.f279*b.e_f279 + a.f280*b.e_f280 + a.f281*b.e_f281 + a.f282*b.e_f282 + a.f283*b.e_f283 + a.f284*b.e_f284 + a.f285*b.e_f285 + a.f286*b.e_f286 + a.f287*b.e_f287 + a.f288*b.e_f288 + a.f289*b.e_f289 + a.f290*b.e_f290 + a.f291*b.e_f291 + a.f292*b.e_f292 + a.f293*b.e_f293 + a.f294*b.e_f294 + a.f295*b.e_f295 + a.f296*b.e_f296 + a.f297*b.e_f297 + a.f298*b.e_f298 + a.f299*b.e_f299 + a.f300*b.e_f300), (SQRT(a.f1*a.f1 + a.f2*a.f2 + a.f3*a.f3 + a.f4*a.f4 + a.f5*a.f5 + a.f6*a.f6 + a.f7*a.f7 + a.f8*a.f8 + a.f9*a.f9 + a.f10*a.f10 + a.f11*a.f11 + a.f12*a.f12 + a.f13*a.f13 + a.f14*a.f14 + a.f15*a.f15 + a.f16*a.f16 + a.f17*a.f17 + a.f18*a.f18 + a.f19*a.f19 + a.f20*a.f20 + a.f21*a.f21 + a.f22*a.f22 + a.f23*a.f23 + a.f24*a.f24 + a.f25*a.f25 + a.f26*a.f26 + a.f27*a.f27 + a.f28*a.f28 + a.f29*a.f29 + a.f30*a.f30 + a.f31*a.f31 + a.f32*a.f32 + a.f33*a.f33 + a.f34*a.f34 + a.f35*a.f35 + a.f36*a.f36 + a.f37*a.f37 + a.f38*a.f38 + a.f39*a.f39 + a.f40*a.f40 + a.f41*a.f41 + a.f42*a.f42 + a.f43*a.f43 + a.f44*a.f44 + a.f45*a.f45 + a.f46*a.f46 + a.f47*a.f47 + a.f48*a.f48 + a.f49*a.f49 + a.f50*a.f50 + a.f51*a.f51 + a.f52*a.f52 + a.f53*a.f53 + a.f54*a.f54 + a.f55*a.f55 + a.f56*a.f56 + a.f57*a.f57 + a.f58*a.f58 + a.f59*a.f59 + a.f60*a.f60 + a.f61*a.f61 + a.f62*a.f62 + a.f63*a.f63 + a.f64*a.f64 + a.f65*a.f65 + a.f66*a.f66 + a.f67*a.f67 + a.f68*a.f68 + a.f69*a.f69 + a.f70*a.f70 + a.f71*a.f71 + a.f72*a.f72 + a.f73*a.f73 + a.f74*a.f74 + a.f75*a.f75 + a.f76*a.f76 + a.f77*a.f77 + a.f78*a.f78 + a.f79*a.f79 + a.f80*a.f80 + a.f81*a.f81 + a.f82*a.f82 + a.f83*a.f83 + a.f84*a.f84 + a.f85*a.f85 + a.f86*a.f86 + a.f87*a.f87 + a.f88*a.f88 + a.f89*a.f89 + a.f90*a.f90 + a.f91*a.f91 + a.f92*a.f92 + a.f93*a.f93 + a.f94*a.f94 + a.f95*a.f95 + a.f96*a.f96 + a.f97*a.f97 + a.f98*a.f98 + a.f99*a.f99 + a.f100*a.f100 + a.f101*a.f101 + a.f102*a.f102 + a.f103*a.f103 + a.f104*a.f104 + a.f105*a.f105 + a.f106*a.f106 + a.f107*a.f107 + a.f108*a.f108 + a.f109*a.f109 + a.f110*a.f110 + a.f111*a.f111 + a.f112*a.f112 + a.f113*a.f113 + a.f114*a.f114 + a.f115*a.f115 + a.f116*a.f116 + a.f117*a.f117 + a.f118*a.f118 + a.f119*a.f119 + a.f120*a.f120 + a.f121*a.f121 + a.f122*a.f122 + a.f123*a.f123 + a.f124*a.f124 + a.f125*a.f125 + a.f126*a.f126 + a.f127*a.f127 + a.f128*a.f128 + a.f129*a.f129 + a.f130*a.f130 + a.f131*a.f131 + a.f132*a.f132 + a.f133*a.f133 + a.f134*a.f134 + a.f135*a.f135 + a.f136*a.f136 + a.f137*a.f137 + a.f138*a.f138 + a.f139*a.f139 + a.f140*a.f140 + a.f141*a.f141 + a.f142*a.f142 + a.f143*a.f143 + a.f144*a.f144 + a.f145*a.f145 + a.f146*a.f146 + a.f147*a.f147 + a.f148*a.f148 + a.f149*a.f149 + a.f150*a.f150 + a.f151*a.f151 + a.f152*a.f152 + a.f153*a.f153 + a.f154*a.f154 + a.f155*a.f155 + a.f156*a.f156 + a.f157*a.f157 + a.f158*a.f158 + a.f159*a.f159 + a.f160*a.f160 + a.f161*a.f161 + a.f162*a.f162 + a.f163*a.f163 + a.f164*a.f164 + a.f165*a.f165 + a.f166*a.f166 + a.f167*a.f167 + a.f168*a.f168 + a.f169*a.f169 + a.f170*a.f170 + a.f171*a.f171 + a.f172*a.f172 + a.f173*a.f173 + a.f174*a.f174 + a.f175*a.f175 + a.f176*a.f176 + a.f177*a.f177 + a.f178*a.f178 + a.f179*a.f179 + a.f180*a.f180 + a.f181*a.f181 + a.f182*a.f182 + a.f183*a.f183 + a.f184*a.f184 + a.f185*a.f185 + a.f186*a.f186 + a.f187*a.f187 + a.f188*a.f188 + a.f189*a.f189 + a.f190*a.f190 + a.f191*a.f191 + a.f192*a.f192 + a.f193*a.f193 + a.f194*a.f194 + a.f195*a.f195 + a.f196*a.f196 + a.f197*a.f197 + a.f198*a.f198 + a.f199*a.f199 + a.f200*a.f200 + a.f201*a.f201 + a.f202*a.f202 + a.f203*a.f203 + a.f204*a.f204 + a.f205*a.f205 + a.f206*a.f206 + a.f207*a.f207 + a.f208*a.f208 + a.f209*a.f209 + a.f210*a.f210 + a.f211*a.f211 + a.f212*a.f212 + a.f213*a.f213 + a.f214*a.f214 + a.f215*a.f215 + a.f216*a.f216 + a.f217*a.f217 + a.f218*a.f218 + a.f219*a.f219 + a.f220*a.f220 + a.f221*a.f221 + a.f222*a.f222 + a.f223*a.f223 + a.f224*a.f224 + a.f225*a.f225 + a.f226*a.f226 + a.f227*a.f227 + a.f228*a.f228 + a.f229*a.f229 + a.f230*a.f230 + a.f231*a.f231 + a.f232*a.f232 + a.f233*a.f233 + a.f234*a.f234 + a.f235*a.f235 + a.f236*a.f236 + a.f237*a.f237 + a.f238*a.f238 + a.f239*a.f239 + a.f240*a.f240 + a.f241*a.f241 + a.f242*a.f242 + a.f243*a.f243 + a.f244*a.f244 + a.f245*a.f245 + a.f246*a.f246 + a.f247*a.f247 + a.f248*a.f248 + a.f249*a.f249 + a.f250*a.f250 + a.f251*a.f251 + a.f252*a.f252 + a.f253*a.f253 + a.f254*a.f254 + a.f255*a.f255 + a.f256*a.f256 + a.f257*a.f257 + a.f258*a.f258 + a.f259*a.f259 + a.f260*a.f260 + a.f261*a.f261 + a.f262*a.f262 + a.f263*a.f263 + a.f264*a.f264 + a.f265*a.f265 + a.f266*a.f266 + a.f267*a.f267 + a.f268*a.f268 + a.f269*a.f269 + a.f270*a.f270 + a.f271*a.f271 + a.f272*a.f272 + a.f273*a.f273 + a.f274*a.f274 + a.f275*a.f275 + a.f276*a.f276 + a.f277*a.f277 + a.f278*a.f278 + a.f279*a.f279 + a.f280*a.f280 + a.f281*a.f281 + a.f282*a.f282 + a.f283*a.f283 + a.f284*a.f284 + a.f285*a.f285 + a.f286*a.f286 + a.f287*a.f287 + a.f288*a.f288 + a.f289*a.f289 + a.f290*a.f290 + a.f291*a.f291 + a.f292*a.f292 + a.f293*a.f293 + a.f294*a.f294 + a.f295*a.f295 + a.f296*a.f296 + a.f297*a.f297 + a.f298*a.f298 + a.f299*a.f299 + a.f300*a.f300)*SQRT(b.e_f1*b.e_f1 + b.e_f2*b.e_f2 + b.e_f3*b.e_f3 + b.e_f4*b.e_f4 + b.e_f5*b.e_f5 + b.e_f6*b.e_f6 + b.e_f7*b.e_f7 + b.e_f8*b.e_f8 + b.e_f9*b.e_f9 + b.e_f10*b.e_f10 + b.e_f11*b.e_f11 + b.e_f12*b.e_f12 + b.e_f13*b.e_f13 + b.e_f14*b.e_f14 + b.e_f15*b.e_f15 + b.e_f16*b.e_f16 + b.e_f17*b.e_f17 + b.e_f18*b.e_f18 + b.e_f19*b.e_f19 + b.e_f20*b.e_f20 + b.e_f21*b.e_f21 + b.e_f22*b.e_f22 + b.e_f23*b.e_f23 + b.e_f24*b.e_f24 + b.e_f25*b.e_f25 + b.e_f26*b.e_f26 + b.e_f27*b.e_f27 + b.e_f28*b.e_f28 + b.e_f29*b.e_f29 + b.e_f30*b.e_f30 + b.e_f31*b.e_f31 + b.e_f32*b.e_f32 + b.e_f33*b.e_f33 + b.e_f34*b.e_f34 + b.e_f35*b.e_f35 + b.e_f36*b.e_f36 + b.e_f37*b.e_f37 + b.e_f38*b.e_f38 + b.e_f39*b.e_f39 + b.e_f40*b.e_f40 + b.e_f41*b.e_f41 + b.e_f42*b.e_f42 + b.e_f43*b.e_f43 + b.e_f44*b.e_f44 + b.e_f45*b.e_f45 + b.e_f46*b.e_f46 + b.e_f47*b.e_f47 + b.e_f48*b.e_f48 + b.e_f49*b.e_f49 + b.e_f50*b.e_f50 + b.e_f51*b.e_f51 + b.e_f52*b.e_f52 + b.e_f53*b.e_f53 + b.e_f54*b.e_f54 + b.e_f55*b.e_f55 + b.e_f56*b.e_f56 + b.e_f57*b.e_f57 + b.e_f58*b.e_f58 + b.e_f59*b.e_f59 + b.e_f60*b.e_f60 + b.e_f61*b.e_f61 + b.e_f62*b.e_f62 + b.e_f63*b.e_f63 + b.e_f64*b.e_f64 + b.e_f65*b.e_f65 + b.e_f66*b.e_f66 + b.e_f67*b.e_f67 + b.e_f68*b.e_f68 + b.e_f69*b.e_f69 + b.e_f70*b.e_f70 + b.e_f71*b.e_f71 + b.e_f72*b.e_f72 + b.e_f73*b.e_f73 + b.e_f74*b.e_f74 + b.e_f75*b.e_f75 + b.e_f76*b.e_f76 + b.e_f77*b.e_f77 + b.e_f78*b.e_f78 + b.e_f79*b.e_f79 + b.e_f80*b.e_f80 + b.e_f81*b.e_f81 + b.e_f82*b.e_f82 + b.e_f83*b.e_f83 + b.e_f84*b.e_f84 + b.e_f85*b.e_f85 + b.e_f86*b.e_f86 + b.e_f87*b.e_f87 + b.e_f88*b.e_f88 + b.e_f89*b.e_f89 + b.e_f90*b.e_f90 + b.e_f91*b.e_f91 + b.e_f92*b.e_f92 + b.e_f93*b.e_f93 + b.e_f94*b.e_f94 + b.e_f95*b.e_f95 + b.e_f96*b.e_f96 + b.e_f97*b.e_f97 + b.e_f98*b.e_f98 + b.e_f99*b.e_f99 + b.e_f100*b.e_f100 + b.e_f101*b.e_f101 + b.e_f102*b.e_f102 + b.e_f103*b.e_f103 + b.e_f104*b.e_f104 + b.e_f105*b.e_f105 + b.e_f106*b.e_f106 + b.e_f107*b.e_f107 + b.e_f108*b.e_f108 + b.e_f109*b.e_f109 + b.e_f110*b.e_f110 + b.e_f111*b.e_f111 + b.e_f112*b.e_f112 + b.e_f113*b.e_f113 + b.e_f114*b.e_f114 + b.e_f115*b.e_f115 + b.e_f116*b.e_f116 + b.e_f117*b.e_f117 + b.e_f118*b.e_f118 + b.e_f119*b.e_f119 + b.e_f120*b.e_f120 + b.e_f121*b.e_f121 + b.e_f122*b.e_f122 + b.e_f123*b.e_f123 + b.e_f124*b.e_f124 + b.e_f125*b.e_f125 + b.e_f126*b.e_f126 + b.e_f127*b.e_f127 + b.e_f128*b.e_f128 + b.e_f129*b.e_f129 + b.e_f130*b.e_f130 + b.e_f131*b.e_f131 + b.e_f132*b.e_f132 + b.e_f133*b.e_f133 + b.e_f134*b.e_f134 + b.e_f135*b.e_f135 + b.e_f136*b.e_f136 + b.e_f137*b.e_f137 + b.e_f138*b.e_f138 + b.e_f139*b.e_f139 + b.e_f140*b.e_f140 + b.e_f141*b.e_f141 + b.e_f142*b.e_f142 + b.e_f143*b.e_f143 + b.e_f144*b.e_f144 + b.e_f145*b.e_f145 + b.e_f146*b.e_f146 + b.e_f147*b.e_f147 + b.e_f148*b.e_f148 + b.e_f149*b.e_f149 + b.e_f150*b.e_f150 + b.e_f151*b.e_f151 + b.e_f152*b.e_f152 + b.e_f153*b.e_f153 + b.e_f154*b.e_f154 + b.e_f155*b.e_f155 + b.e_f156*b.e_f156 + b.e_f157*b.e_f157 + b.e_f158*b.e_f158 + b.e_f159*b.e_f159 + b.e_f160*b.e_f160 + b.e_f161*b.e_f161 + b.e_f162*b.e_f162 + b.e_f163*b.e_f163 + b.e_f164*b.e_f164 + b.e_f165*b.e_f165 + b.e_f166*b.e_f166 + b.e_f167*b.e_f167 + b.e_f168*b.e_f168 + b.e_f169*b.e_f169 + b.e_f170*b.e_f170 + b.e_f171*b.e_f171 + b.e_f172*b.e_f172 + b.e_f173*b.e_f173 + b.e_f174*b.e_f174 + b.e_f175*b.e_f175 + b.e_f176*b.e_f176 + b.e_f177*b.e_f177 + b.e_f178*b.e_f178 + b.e_f179*b.e_f179 + b.e_f180*b.e_f180 + b.e_f181*b.e_f181 + b.e_f182*b.e_f182 + b.e_f183*b.e_f183 + b.e_f184*b.e_f184 + b.e_f185*b.e_f185 + b.e_f186*b.e_f186 + b.e_f187*b.e_f187 + b.e_f188*b.e_f188 + b.e_f189*b.e_f189 + b.e_f190*b.e_f190 + b.e_f191*b.e_f191 + b.e_f192*b.e_f192 + b.e_f193*b.e_f193 + b.e_f194*b.e_f194 + b.e_f195*b.e_f195 + b.e_f196*b.e_f196 + b.e_f197*b.e_f197 + b.e_f198*b.e_f198 + b.e_f199*b.e_f199 + b.e_f200*b.e_f200 + b.e_f201*b.e_f201 + b.e_f202*b.e_f202 + b.e_f203*b.e_f203 + b.e_f204*b.e_f204 + b.e_f205*b.e_f205 + b.e_f206*b.e_f206 + b.e_f207*b.e_f207 + b.e_f208*b.e_f208 + b.e_f209*b.e_f209 + b.e_f210*b.e_f210 + b.e_f211*b.e_f211 + b.e_f212*b.e_f212 + b.e_f213*b.e_f213 + b.e_f214*b.e_f214 + b.e_f215*b.e_f215 + b.e_f216*b.e_f216 + b.e_f217*b.e_f217 + b.e_f218*b.e_f218 + b.e_f219*b.e_f219 + b.e_f220*b.e_f220 + b.e_f221*b.e_f221 + b.e_f222*b.e_f222 + b.e_f223*b.e_f223 + b.e_f224*b.e_f224 + b.e_f225*b.e_f225 + b.e_f226*b.e_f226 + b.e_f227*b.e_f227 + b.e_f228*b.e_f228 + b.e_f229*b.e_f229 + b.e_f230*b.e_f230 + b.e_f231*b.e_f231 + b.e_f232*b.e_f232 + b.e_f233*b.e_f233 + b.e_f234*b.e_f234 + b.e_f235*b.e_f235 + b.e_f236*b.e_f236 + b.e_f237*b.e_f237 + b.e_f238*b.e_f238 + b.e_f239*b.e_f239 + b.e_f240*b.e_f240 + b.e_f241*b.e_f241 + b.e_f242*b.e_f242 + b.e_f243*b.e_f243 + b.e_f244*b.e_f244 + b.e_f245*b.e_f245 + b.e_f246*b.e_f246 + b.e_f247*b.e_f247 + b.e_f248*b.e_f248 + b.e_f249*b.e_f249 + b.e_f250*b.e_f250 + b.e_f251*b.e_f251 + b.e_f252*b.e_f252 + b.e_f253*b.e_f253 + b.e_f254*b.e_f254 + b.e_f255*b.e_f255 + b.e_f256*b.e_f256 + b.e_f257*b.e_f257 + b.e_f258*b.e_f258 + b.e_f259*b.e_f259 + b.e_f260*b.e_f260 + b.e_f261*b.e_f261 + b.e_f262*b.e_f262 + b.e_f263*b.e_f263 + b.e_f264*b.e_f264 + b.e_f265*b.e_f265 + b.e_f266*b.e_f266 + b.e_f267*b.e_f267 + b.e_f268*b.e_f268 + b.e_f269*b.e_f269 + b.e_f270*b.e_f270 + b.e_f271*b.e_f271 + b.e_f272*b.e_f272 + b.e_f273*b.e_f273 + b.e_f274*b.e_f274 + b.e_f275*b.e_f275 + b.e_f276*b.e_f276 + b.e_f277*b.e_f277 + b.e_f278*b.e_f278 + b.e_f279*b.e_f279 + b.e_f280*b.e_f280 + b.e_f281*b.e_f281 + b.e_f282*b.e_f282 + b.e_f283*b.e_f283 + b.e_f284*b.e_f284 + b.e_f285*b.e_f285 + b.e_f286*b.e_f286 + b.e_f287*b.e_f287 + b.e_f288*b.e_f288 + b.e_f289*b.e_f289 + b.e_f290*b.e_f290 + b.e_f291*b.e_f291 + b.e_f292*b.e_f292 + b.e_f293*b.e_f293 + b.e_f294*b.e_f294 + b.e_f295*b.e_f295 + b.e_f296*b.e_f296 + b.e_f297*b.e_f297 + b.e_f298*b.e_f298 + b.e_f299*b.e_f299 + b.e_f300*b.e_f300))) similarity
-FROM `gcp-pdp-osm-dev.osm_clustering.w2v_glove_6B_300d` a
-CROSS JOIN `gcp-pdp-osm-dev.osm_clustering.grid_1km_300d_clusters_10_centroids_trans` b
+FROM `gcp-pdp-osm-dev.words.w2v_glove_6B_300d` a
+CROSS JOIN `gcp-pdp-osm-dev.osm_clustering_grid_1km.kmeans_300d_clusters_10_centroids_trans` b
 WHERE b.centroid_id = 5
 ORDER BY similarity DESC
 LIMIT 20
