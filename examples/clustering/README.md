@@ -417,7 +417,7 @@ stopword AS (
 SELECT DISTINCT word FROM rank WHERE rank.rank <= 100
 )
 
-SELECT rank.word, rank.centroid_id, FLOOR(rank.similarity * 100) AS similarity, rank.rank 
+SELECT rank.word, rank.centroid_id, CAST(rank.similarity * 100 AS INT64) AS similarity, rank.rank 
 FROM rank
 WHERE rank.word NOT IN (SELECT word FROM stopword)
 AND rank.rank <=150
