@@ -420,7 +420,7 @@ GROUP BY word
 HAVING c > 1
 ),
 rank2 AS (
-SELECT rank.word, rank.centroid_id, CAST(rank.similarity * 100 AS INT64) AS similarity, ROW_NUMBER() OVER (PARTITION BY centroid_id ORDER BY rank.rank DESC) AS rank
+SELECT rank.word, rank.centroid_id, CAST(rank.similarity * 10000 AS INT64) AS similarity, ROW_NUMBER() OVER (PARTITION BY centroid_id ORDER BY rank.rank DESC) AS rank
 FROM rank
 WHERE rank.word NOT IN (SELECT word FROM stopword)
 AND rank.rank <=150
