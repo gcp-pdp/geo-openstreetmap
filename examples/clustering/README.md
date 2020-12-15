@@ -382,7 +382,7 @@ LIMIT 20
 
 An improved query to calculate cosine similarity between centroids and words vectors. It subtracts the mean centroid (of all centroids) from each centroid before calculating cosine similarity. It also removes words from consideration that appear in the top K=100 positions of any centroid (rationale is that these are too common) and then includes only the next J=50 words (rationale is to exclude long tail words from tagcloud visualization / human work to identify theme for coloring) 
 
-```
+```sql
 WITH meancentroid AS (
 SELECT 
 AVG(e_f1) AS e_f1, AVG(e_f2) AS e_f2, AVG(e_f3) AS e_f3, AVG(e_f4) AS e_f4, AVG(e_f5) AS e_f5, AVG(e_f6) AS e_f6, AVG(e_f7) AS e_f7, AVG(e_f8) AS e_f8, AVG(e_f9) AS e_f9, AVG(e_f10) AS e_f10, AVG(e_f11) AS e_f11, AVG(e_f12) AS e_f12, AVG(e_f13) AS e_f13, AVG(e_f14) AS e_f14, AVG(e_f15) AS e_f15, AVG(e_f16) AS e_f16, AVG(e_f17) AS e_f17, AVG(e_f18) AS e_f18, AVG(e_f19) AS e_f19, AVG(e_f20) AS e_f20, AVG(e_f21) AS e_f21, AVG(e_f22) AS e_f22, AVG(e_f23) AS e_f23, AVG(e_f24) AS e_f24, AVG(e_f25) AS e_f25, AVG(e_f26) AS e_f26, AVG(e_f27) AS e_f27, AVG(e_f28) AS e_f28, AVG(e_f29) AS e_f29, AVG(e_f30) AS e_f30, AVG(e_f31) AS e_f31, AVG(e_f32) AS e_f32, AVG(e_f33) AS e_f33, AVG(e_f34) AS e_f34, AVG(e_f35) AS e_f35, AVG(e_f36) AS e_f36, AVG(e_f37) AS e_f37, AVG(e_f38) AS e_f38, AVG(e_f39) AS e_f39, AVG(e_f40) AS e_f40, AVG(e_f41) AS e_f41, AVG(e_f42) AS e_f42, AVG(e_f43) AS e_f43, AVG(e_f44) AS e_f44, AVG(e_f45) AS e_f45, AVG(e_f46) AS e_f46, AVG(e_f47) AS e_f47, AVG(e_f48) AS e_f48, AVG(e_f49) AS e_f49, AVG(e_f50) AS e_f50, AVG(e_f51) AS e_f51, AVG(e_f52) AS e_f52, AVG(e_f53) AS e_f53, AVG(e_f54) AS e_f54, AVG(e_f55) AS e_f55, AVG(e_f56) AS e_f56, AVG(e_f57) AS e_f57, AVG(e_f58) AS e_f58, AVG(e_f59) AS e_f59, AVG(e_f60) AS e_f60, AVG(e_f61) AS e_f61, AVG(e_f62) AS e_f62, AVG(e_f63) AS e_f63, AVG(e_f64) AS e_f64, AVG(e_f65) AS e_f65, AVG(e_f66) AS e_f66, AVG(e_f67) AS e_f67, AVG(e_f68) AS e_f68, AVG(e_f69) AS e_f69, AVG(e_f70) AS e_f70, AVG(e_f71) AS e_f71, AVG(e_f72) AS e_f72, AVG(e_f73) AS e_f73, AVG(e_f74) AS e_f74, AVG(e_f75) AS e_f75, AVG(e_f76) AS e_f76, AVG(e_f77) AS e_f77, AVG(e_f78) AS e_f78, AVG(e_f79) AS e_f79, AVG(e_f80) AS e_f80, AVG(e_f81) AS e_f81, AVG(e_f82) AS e_f82, AVG(e_f83) AS e_f83, AVG(e_f84) AS e_f84, AVG(e_f85) AS e_f85, AVG(e_f86) AS e_f86, AVG(e_f87) AS e_f87, AVG(e_f88) AS e_f88, AVG(e_f89) AS e_f89, AVG(e_f90) AS e_f90, AVG(e_f91) AS e_f91, AVG(e_f92) AS e_f92, AVG(e_f93) AS e_f93, AVG(e_f94) AS e_f94, AVG(e_f95) AS e_f95, AVG(e_f96) AS e_f96, AVG(e_f97) AS e_f97, AVG(e_f98) AS e_f98, AVG(e_f99) AS e_f99, AVG(e_f100) AS e_f100, AVG(e_f101) AS e_f101, AVG(e_f102) AS e_f102, AVG(e_f103) AS e_f103, AVG(e_f104) AS e_f104, AVG(e_f105) AS e_f105, AVG(e_f106) AS e_f106, AVG(e_f107) AS e_f107, AVG(e_f108) AS e_f108, AVG(e_f109) AS e_f109, AVG(e_f110) AS e_f110, AVG(e_f111) AS e_f111, AVG(e_f112) AS e_f112, AVG(e_f113) AS e_f113, AVG(e_f114) AS e_f114, AVG(e_f115) AS e_f115, AVG(e_f116) AS e_f116, AVG(e_f117) AS e_f117, AVG(e_f118) AS e_f118, AVG(e_f119) AS e_f119, AVG(e_f120) AS e_f120, AVG(e_f121) AS e_f121, AVG(e_f122) AS e_f122, AVG(e_f123) AS e_f123, AVG(e_f124) AS e_f124, AVG(e_f125) AS e_f125, AVG(e_f126) AS e_f126, AVG(e_f127) AS e_f127, AVG(e_f128) AS e_f128, AVG(e_f129) AS e_f129, AVG(e_f130) AS e_f130, AVG(e_f131) AS e_f131, AVG(e_f132) AS e_f132, AVG(e_f133) AS e_f133, AVG(e_f134) AS e_f134, AVG(e_f135) AS e_f135, AVG(e_f136) AS e_f136, AVG(e_f137) AS e_f137, AVG(e_f138) AS e_f138, AVG(e_f139) AS e_f139, AVG(e_f140) AS e_f140, AVG(e_f141) AS e_f141, AVG(e_f142) AS e_f142, AVG(e_f143) AS e_f143, AVG(e_f144) AS e_f144, AVG(e_f145) AS e_f145, AVG(e_f146) AS e_f146, AVG(e_f147) AS e_f147, AVG(e_f148) AS e_f148, AVG(e_f149) AS e_f149, AVG(e_f150) AS e_f150, AVG(e_f151) AS e_f151, AVG(e_f152) AS e_f152, AVG(e_f153) AS e_f153, AVG(e_f154) AS e_f154, AVG(e_f155) AS e_f155, AVG(e_f156) AS e_f156, AVG(e_f157) AS e_f157, AVG(e_f158) AS e_f158, AVG(e_f159) AS e_f159, AVG(e_f160) AS e_f160, AVG(e_f161) AS e_f161, AVG(e_f162) AS e_f162, AVG(e_f163) AS e_f163, AVG(e_f164) AS e_f164, AVG(e_f165) AS e_f165, AVG(e_f166) AS e_f166, AVG(e_f167) AS e_f167, AVG(e_f168) AS e_f168, AVG(e_f169) AS e_f169, AVG(e_f170) AS e_f170, AVG(e_f171) AS e_f171, AVG(e_f172) AS e_f172, AVG(e_f173) AS e_f173, AVG(e_f174) AS e_f174, AVG(e_f175) AS e_f175, AVG(e_f176) AS e_f176, AVG(e_f177) AS e_f177, AVG(e_f178) AS e_f178, AVG(e_f179) AS e_f179, AVG(e_f180) AS e_f180, AVG(e_f181) AS e_f181, AVG(e_f182) AS e_f182, AVG(e_f183) AS e_f183, AVG(e_f184) AS e_f184, AVG(e_f185) AS e_f185, AVG(e_f186) AS e_f186, AVG(e_f187) AS e_f187, AVG(e_f188) AS e_f188, AVG(e_f189) AS e_f189, AVG(e_f190) AS e_f190, AVG(e_f191) AS e_f191, AVG(e_f192) AS e_f192, AVG(e_f193) AS e_f193, AVG(e_f194) AS e_f194, AVG(e_f195) AS e_f195, AVG(e_f196) AS e_f196, AVG(e_f197) AS e_f197, AVG(e_f198) AS e_f198, AVG(e_f199) AS e_f199, AVG(e_f200) AS e_f200, AVG(e_f201) AS e_f201, AVG(e_f202) AS e_f202, AVG(e_f203) AS e_f203, AVG(e_f204) AS e_f204, AVG(e_f205) AS e_f205, AVG(e_f206) AS e_f206, AVG(e_f207) AS e_f207, AVG(e_f208) AS e_f208, AVG(e_f209) AS e_f209, AVG(e_f210) AS e_f210, AVG(e_f211) AS e_f211, AVG(e_f212) AS e_f212, AVG(e_f213) AS e_f213, AVG(e_f214) AS e_f214, AVG(e_f215) AS e_f215, AVG(e_f216) AS e_f216, AVG(e_f217) AS e_f217, AVG(e_f218) AS e_f218, AVG(e_f219) AS e_f219, AVG(e_f220) AS e_f220, AVG(e_f221) AS e_f221, AVG(e_f222) AS e_f222, AVG(e_f223) AS e_f223, AVG(e_f224) AS e_f224, AVG(e_f225) AS e_f225, AVG(e_f226) AS e_f226, AVG(e_f227) AS e_f227, AVG(e_f228) AS e_f228, AVG(e_f229) AS e_f229, AVG(e_f230) AS e_f230, AVG(e_f231) AS e_f231, AVG(e_f232) AS e_f232, AVG(e_f233) AS e_f233, AVG(e_f234) AS e_f234, AVG(e_f235) AS e_f235, AVG(e_f236) AS e_f236, AVG(e_f237) AS e_f237, AVG(e_f238) AS e_f238, AVG(e_f239) AS e_f239, AVG(e_f240) AS e_f240, AVG(e_f241) AS e_f241, AVG(e_f242) AS e_f242, AVG(e_f243) AS e_f243, AVG(e_f244) AS e_f244, AVG(e_f245) AS e_f245, AVG(e_f246) AS e_f246, AVG(e_f247) AS e_f247, AVG(e_f248) AS e_f248, AVG(e_f249) AS e_f249, AVG(e_f250) AS e_f250, AVG(e_f251) AS e_f251, AVG(e_f252) AS e_f252, AVG(e_f253) AS e_f253, AVG(e_f254) AS e_f254, AVG(e_f255) AS e_f255, AVG(e_f256) AS e_f256, AVG(e_f257) AS e_f257, AVG(e_f258) AS e_f258, AVG(e_f259) AS e_f259, AVG(e_f260) AS e_f260, AVG(e_f261) AS e_f261, AVG(e_f262) AS e_f262, AVG(e_f263) AS e_f263, AVG(e_f264) AS e_f264, AVG(e_f265) AS e_f265, AVG(e_f266) AS e_f266, AVG(e_f267) AS e_f267, AVG(e_f268) AS e_f268, AVG(e_f269) AS e_f269, AVG(e_f270) AS e_f270, AVG(e_f271) AS e_f271, AVG(e_f272) AS e_f272, AVG(e_f273) AS e_f273, AVG(e_f274) AS e_f274, AVG(e_f275) AS e_f275, AVG(e_f276) AS e_f276, AVG(e_f277) AS e_f277, AVG(e_f278) AS e_f278, AVG(e_f279) AS e_f279, AVG(e_f280) AS e_f280, AVG(e_f281) AS e_f281, AVG(e_f282) AS e_f282, AVG(e_f283) AS e_f283, AVG(e_f284) AS e_f284, AVG(e_f285) AS e_f285, AVG(e_f286) AS e_f286, AVG(e_f287) AS e_f287, AVG(e_f288) AS e_f288, AVG(e_f289) AS e_f289, AVG(e_f290) AS e_f290, AVG(e_f291) AS e_f291, AVG(e_f292) AS e_f292, AVG(e_f293) AS e_f293, AVG(e_f294) AS e_f294, AVG(e_f295) AS e_f295, AVG(e_f296) AS e_f296, AVG(e_f297) AS e_f297, AVG(e_f298) AS e_f298, AVG(e_f299) AS e_f299, AVG(e_f300) AS e_f300
@@ -400,7 +400,6 @@ FROM
 `gcp-pdp-osm-dev.words.w2v_glove_6B_300d` a
 -- CROSS JOIN `gcp-pdp-osm-dev.osm_clustering_grid_1km.kmeans_300d_clusters_10_centroids_trans` b
 CROSS JOIN centeredcentroid b
--- WHERE b.centroid_id = 5
 ),
 
 sim2 AS ( 
@@ -410,16 +409,24 @@ GROUP BY sim.word, sim.centroid_id
 ORDER BY similarity DESC
 ),
 rank AS (
-SELECT sim2.word, sim2.centroid_id, sim2.similarity, ROW_NUMBER() OVER (PARTITION BY sim2.centroid_id ORDER BY sim2.similarity DESC)  AS rank
+SELECT sim2.word, sim2.centroid_id, sim2.similarity, ROW_NUMBER() OVER (PARTITION BY sim2.centroid_id ORDER BY sim2.similarity DESC) AS rank
 FROM sim2
 ),
 stopword AS (
-SELECT DISTINCT word FROM rank WHERE rank.rank <= 100
-)
-
-SELECT rank.word, rank.centroid_id, CAST(rank.similarity * 100 AS INT64) AS similarity, rank.rank 
+SELECT word, COUNT(word) AS c
+FROM rank
+WHERE rank.rank <= 100
+GROUP BY word
+HAVING c > 1
+),
+rank2 AS (
+SELECT rank.word, rank.centroid_id, CAST(rank.similarity * 100 AS INT64) AS similarity, ROW_NUMBER() OVER (PARTITION BY centroid_id ORDER BY rank.rank DESC) AS rank
 FROM rank
 WHERE rank.word NOT IN (SELECT word FROM stopword)
 AND rank.rank <=150
-ORDER BY centroid_id, rank
+)
+
+SELECT *
+FROM rank2
+WHERE rank <= 50
 ```
