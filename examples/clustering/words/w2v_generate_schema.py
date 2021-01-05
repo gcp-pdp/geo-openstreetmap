@@ -1,6 +1,6 @@
 import sys
 
-NUM_COLUMNS = 50
+NUM_COLUMNS = 300
 # Template for resulting schema word:STRING,f1:FLOAT,f2...
 SCHEMA = 'word:STRING,{}'
 if __name__ == '__main__':

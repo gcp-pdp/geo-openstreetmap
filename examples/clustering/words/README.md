@@ -1,11 +1,10 @@
 ## Import Glove vectors into BigQuery
 Download word2vec (Glove)
 ```
-cd ./data
+cd ../data
 wget http://nlp.stanford.edu/data/glove.6B.zip
 unzip ./glove.6B.zip
 rm ./glove.6B.zip
-cd ../
 ```
 
 Convert word2vec to JSONL format
