@@ -1,0 +1,6 @@
+textract
+nltk
+numpy
+scipy
+matplotlib
+sklearn
