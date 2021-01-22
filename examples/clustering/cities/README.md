@@ -47,8 +47,9 @@ Query to simply divide 1km resolution grid
 WITH divided_grid AS (SELECT
   long1 + x*(long2 - long1)/2 as long1,
   lat1 + y*(lat2 - lat1)/2 as lat1,
-  long1 + (x+1)*(long2 - long1)/2 as long2,
-  lat1 + (y+1)*(lat2 - lat1)/2 as lat2,
+  long1 + (x + 1)*(long2 - long1)/2 as long2,
+  lat1 + (y + 1)*(lat2 - lat1)/2 as lat2,
+  city_name,
   country_name,
   geo_id,
   population,
@@ -67,6 +68,7 @@ SELECT
   CAST(JSON_EXTRACT(ST_ASGEOJSON(geog), '$.coordinates[0][2][1]') AS FLOAT64) as lat2,
   quadrants.x,
   quadrants.y,
+  city_name,
   country_name,
   CONCAT(geo_id,x,y) as geo_id,
   population/4 as population,
@@ -76,6 +78,7 @@ FROM `osm_cities.cities_population_grid_1km`
 CROSS JOIN quadrants
 ))
 SELECT
+  city_name,
   country_name,
   geo_id,
   population,
@@ -102,6 +105,7 @@ WITH divided_grid AS (SELECT
   lat1 + y*(lat2 - lat1)/2 as lat1,
   long1 + (x + 1)*(long2 - long1)/2 as long2,
   lat1 + (y + 1)*(lat2 - lat1)/2 as lat2,
+  city_name,
   country_name,
   geo_id,
   population,
@@ -120,6 +124,7 @@ SELECT
   CAST(JSON_EXTRACT(ST_ASGEOJSON(geog), '$.coordinates[0][2][1]') AS FLOAT64) as lat2,
   quadrants.x,
   quadrants.y,
+  city_name,
   country_name,
   CONCAT(geo_id,x,y) as geo_id,
   population/4 as population,
@@ -129,6 +134,7 @@ FROM `osm_cities.cities_population_grid_05km`
 CROSS JOIN quadrants
 ))
 SELECT
+  city_name,
   country_name,
   geo_id,
   population,

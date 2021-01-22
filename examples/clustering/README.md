@@ -332,14 +332,14 @@ FROM
 SELECT
   grid.geog, CENTROID_ID, cs.color
 FROM
-  ML.PREDICT( MODEL osm_clustering.grid_05km_300d_clusters_10,
+  ML.PREDICT( MODEL osm_clustering_grid_05km.kmeans_300d_clusters_10,
     (
     SELECT
       *
     FROM
-      osm_clustering.grid_05km_vectors_300d
+      osm_clustering_grid_05km.vectors_300d
 )) as clusters
-JOIN osm_clustering.cities_c_population_grid_05km AS grid ON grid.geo_id = clusters.geo_id
+JOIN osm_cities.cities_population_grid_05km AS grid ON grid.geo_id = clusters.geo_id
 JOIN osm_clustering.color_scale_clusters_10 cs ON cs.cluster = CENTROID_ID
 WHERE grid.city_name = "Kyiv"
 ```
