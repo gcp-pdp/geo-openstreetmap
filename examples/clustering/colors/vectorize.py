@@ -8,6 +8,8 @@ import nltk
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 
+from sklearn.feature_extraction.text import TfidfVectorizer
+
 nltk.download('punkt')
 
 nltk.download('stopwords')
@@ -119,15 +121,44 @@ def vectorize():
     # remove text tail from the last part
     dimensions_details[-1] = re.split('LBCS Top Level Codes for all Dimensions', dimensions_details[-1])[0]
 
+    corpus = []
     vectors = []
     for dimension in dimensions_details:
         # split by classes codes
         codes = re.split('1000|2000|3000|4000|5000|6000|7000|8000|9000|9999', dimension)[1:10]
+
         for code in codes:
             tokenized = tokenize(code)
-            vec = mean_vector(tokenized)
-            vectors.append(vec)
+            corpus.append(' '.join(tokenized))
+            # vec = mean_vector(tokenized)
+            # vectors.append(vec)
 
+    vectorizer = TfidfVectorizer()
+    X = vectorizer.fit_transform(corpus)
+    features = vectorizer.get_feature_names()
+
+    top_k = 10
+    for tf_idf_vector in X:
+        tf_idf_arr = tf_idf_vector[0].toarray().reshape(-1)
+
+        # for top-k implementation
+        # max_indexes = np.argpartition(tf_idf_arr, -top_k)[-top_k:]
+
+        # just plain tf-idf
+        weights = tf_idf_arr / sum(tf_idf_arr)
+        # softmax
+        # weights = np.exp(tf_idf_arr) / np.sum(np.exp(tf_idf_arr))
+        # like softmax but with tanh
+        # weights = np.tanh(tf_idf_arr) / np.sum(np.tanh(tf_idf_arr))
+
+        sum_vector = np.zeros(300)
+        for i, feature in enumerate(features):
+            if feature not in embeddings_dict:
+                continue
+            sum_vector += weights[i] * embeddings_dict[feature]
+        vectors.append(sum_vector)
+
+    assert len(rows) == len(vectors)
     for (row, vec) in zip(rows, vectors):
         for i in range(len(vec)):
             row['f{}'.format(i+1)] = vec[i]
