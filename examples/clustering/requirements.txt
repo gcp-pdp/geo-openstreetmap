@@ -4,3 +4,6 @@ numpy
 scipy
 matplotlib
 sklearn
+staticmap
+pandas
+pandas_gbq
