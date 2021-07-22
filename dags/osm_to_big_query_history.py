@@ -219,6 +219,7 @@ with airflow.DAG(
                 write_disposition='WRITE_APPEND',
                 max_bad_records=max_bad_records_for_bq_export,
                 retries=5,
+                cluster_fields=['geometry'],
                 dag=dag)
             json_to_bq_tasks.append(json_to_bq_task)
             remove_json_task = gcs.GCSDeleteObjectsOperator(

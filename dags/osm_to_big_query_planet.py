@@ -178,6 +178,7 @@ with airflow.DAG(
             schema_fields=nodes_schema,
             write_disposition='WRITE_TRUNCATE',
             max_bad_records=max_bad_records_for_bq_export,
+            cluster_fields=['geometry'],
             dag=dag)
         features_to_bq_tasks_data.append((task, feature, destination_dataset_table))
 
@@ -240,6 +241,7 @@ with airflow.DAG(
             schema_fields=schema,
             write_disposition='WRITE_TRUNCATE',
             max_bad_records=max_bad_records_for_bq_export,
+            cluster_fields=['geometry'],
             dag=dag)
         nodes_ways_relations_tasks_data.append((task, element, destination_dataset_table))
 
