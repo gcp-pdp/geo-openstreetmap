@@ -3,11 +3,10 @@ import os
 import airflow
 import json
 
-from airflow.contrib.operators import kubernetes_pod_operator
-
-from airflow.contrib.operators import gcs_to_bq
-from airflow.contrib.operators import bigquery_operator
-from airflow.operators import bash_operator
+from airflow.operators import bash
+from airflow.providers.google.cloud.operators import bigquery
+from airflow.providers.google.cloud.transfers import gcs_to_bigquery
+from airflow.providers.cncf.kubernetes.operators import kubernetes_pod
 
 from utils import bq_utils
 from utils import gcs_utils
@@ -106,27 +105,27 @@ with airflow.DAG(
     src_osm_gcs_uri = test_osm_gcs_uri if test_osm_gcs_uri else "gs://{}/{}".format('{{ dag_run.conf.bucket }}',
                                                                                     '{{ dag_run.conf.name }}')
     # TASK #1. update-history-index
-    create_sn_additional_pool_task = bash_operator.BashOperator(task_id="create-sn-additional-pool",
-                                                                bash_command=create_additional_pool_cmd,
-                                                                params={"POOL_NAME": addt_sn_gke_pool,
-                                                                        "GKE_CLUSTER_NAME": gke_main_cluster_name,
-                                                                        "PROJECT_ID": project_id,
-                                                                        "GKE_ZONE": gke_zone,
-                                                                        "POOL_MACHINE_TYPE": addt_sn_gke_pool_machine_type,
-                                                                        "POOL_NUM_NODES": addt_sn_gke_pool_num_nodes,
-                                                                        "POOL_DISK_SIZE": addt_sn_gke_pool_disk_size
-                                                                        })
+    create_sn_additional_pool_task = bash.BashOperator(task_id="create-sn-additional-pool",
+                                                       bash_command=create_additional_pool_cmd,
+                                                       params={"POOL_NAME": addt_sn_gke_pool,
+                                                               "GKE_CLUSTER_NAME": gke_main_cluster_name,
+                                                               "PROJECT_ID": project_id,
+                                                               "GKE_ZONE": gke_zone,
+                                                               "POOL_MACHINE_TYPE": addt_sn_gke_pool_machine_type,
+                                                               "POOL_NUM_NODES": addt_sn_gke_pool_num_nodes,
+                                                               "POOL_DISK_SIZE": addt_sn_gke_pool_disk_size
+                                                               })
     # TASK #2. update-history-index
-    create_mn_additional_pool_task = bash_operator.BashOperator(task_id="create-mn-additional-pool",
-                                                                bash_command=create_additional_pool_cmd,
-                                                                params={"POOL_NAME": addt_mn_gke_pool,
-                                                                        "GKE_CLUSTER_NAME": gke_main_cluster_name,
-                                                                        "PROJECT_ID": project_id,
-                                                                        "GKE_ZONE": gke_zone,
-                                                                        "POOL_MACHINE_TYPE": addt_mn_gke_pool_machine_type,
-                                                                        "POOL_NUM_NODES": addt_mn_gke_pool_num_nodes,
-                                                                        "POOL_DISK_SIZE": addt_mn_gke_pool_disk_size
-                                                                        })
+    create_mn_additional_pool_task = bash.BashOperator(task_id="create-mn-additional-pool",
+                                                       bash_command=create_additional_pool_cmd,
+                                                       params={"POOL_NAME": addt_mn_gke_pool,
+                                                               "GKE_CLUSTER_NAME": gke_main_cluster_name,
+                                                               "PROJECT_ID": project_id,
+                                                               "GKE_ZONE": gke_zone,
+                                                               "POOL_MACHINE_TYPE": addt_mn_gke_pool_machine_type,
+                                                               "POOL_NUM_NODES": addt_mn_gke_pool_num_nodes,
+                                                               "POOL_DISK_SIZE": addt_mn_gke_pool_disk_size
+                                                               })
     create_mn_additional_pool_task.set_upstream(create_sn_additional_pool_task)
 
     # TASK #3. osm_to_features
@@ -142,7 +141,7 @@ with airflow.DAG(
         branch_name, branch_features_to_process = branch_tuple
 
         layers = ",".join(branch_features_to_process)
-        osm_to_features_task = kubernetes_pod_operator.KubernetesPodOperator(
+        osm_to_features_task = kubernetes_pod.KubernetesPodOperator(
             task_id='osm-to-features--{}'.format(branch_name),
             name='osm-to-features--{}'.format(branch_name),
             namespace='default',
@@ -170,7 +169,7 @@ with airflow.DAG(
         source_object = jsonl_file_names_format.format(feature)
         destination_dataset_table = '{}.planet_features_{}'.format(bq_dataset_to_export, feature)
 
-        task = gcs_to_bq.GoogleCloudStorageToBigQueryOperator(
+        task = gcs_to_bigquery.GCSToBigQueryOperator(
             task_id=task_id,
             bucket=src_features_gcs_bucket,
             source_objects=[source_object],
@@ -179,6 +178,7 @@ with airflow.DAG(
             schema_fields=nodes_schema,
             write_disposition='WRITE_TRUNCATE',
             max_bad_records=max_bad_records_for_bq_export,
+            cluster_fields=['geometry'],
             dag=dag)
         features_to_bq_tasks_data.append((task, feature, destination_dataset_table))
 
@@ -189,7 +189,7 @@ with airflow.DAG(
     feature_union_query = bq_utils.union_queries(create_features_queries)
 
     destination_table = "{}.{}".format(bq_dataset_to_export, feature_union_bq_table_name)
-    feature_union_task = bigquery_operator.BigQueryOperator(
+    feature_union_task = bigquery.BigQueryExecuteQueryOperator(
         task_id='feature_union',
         bql=feature_union_query,
         destination_dataset_table=destination_table,
@@ -198,7 +198,7 @@ with airflow.DAG(
     )
 
     # TASK #6. osm_to_nodes_ways_relations
-    osm_to_nodes_ways_relations = kubernetes_pod_operator.KubernetesPodOperator(
+    osm_to_nodes_ways_relations = kubernetes_pod.KubernetesPodOperator(
         task_id='osm-to-nodes-ways-relations',
         name='osm-to-nodes-ways-relations',
         namespace='default',
@@ -232,7 +232,7 @@ with airflow.DAG(
         source_object = jsonl_file_names_format.format(element)
         destination_dataset_table = '{}.planet_{}'.format(bq_dataset_to_export, element)
 
-        task = gcs_to_bq.GoogleCloudStorageToBigQueryOperator(
+        task = gcs_to_bigquery.GCSToBigQueryOperator(
             task_id=task_id,
             bucket=src_nodes_ways_relations_gcs_bucket,
             source_objects=[source_object],
@@ -241,11 +241,12 @@ with airflow.DAG(
             schema_fields=schema,
             write_disposition='WRITE_TRUNCATE',
             max_bad_records=max_bad_records_for_bq_export,
+            cluster_fields=['geometry'],
             dag=dag)
         nodes_ways_relations_tasks_data.append((task, element, destination_dataset_table))
 
     # TASK #8. generate_layers
-    generate_layers = kubernetes_pod_operator.KubernetesPodOperator(
+    generate_layers = kubernetes_pod.KubernetesPodOperator(
         task_id='generate-layers',
         name='generate-layers',
         namespace='default',
@@ -263,7 +264,7 @@ with airflow.DAG(
         join_geometries_query = join_geometries_format.format(bq_dataset_to_export, bq_dataset_to_export,
                                                                 bq_dataset_to_export)
         destination_table = "{}.{}".format(bq_dataset_to_export, "planet_{}".format(element))
-        join_geometries_task = bigquery_operator.BigQueryOperator(
+        join_geometries_task = bigquery.BigQueryExecuteQueryOperator(
             task_id='join-{}-geometries'.format(element),
             bql=join_geometries_query,
             destination_dataset_table=destination_table,
@@ -274,21 +275,21 @@ with airflow.DAG(
     generate_layers.set_downstream(join_geometries_tasks)
 
     # TASK #10. delete_sn_additional_pool
-    delete_sn_additional_pool_task = bash_operator.BashOperator(task_id="delete-sn-additional-pool",
-                                                                bash_command=delete_additional_pool_cmd,
-                                                                params={"POOL_NAME": addt_sn_gke_pool,
-                                                                        "GKE_CLUSTER_NAME": gke_main_cluster_name,
-                                                                        "GKE_ZONE": gke_zone},
-                                                                trigger_rule="all_done")
+    delete_sn_additional_pool_task = bash.BashOperator(task_id="delete-sn-additional-pool",
+                                                       bash_command=delete_additional_pool_cmd,
+                                                       params={"POOL_NAME": addt_sn_gke_pool,
+                                                               "GKE_CLUSTER_NAME": gke_main_cluster_name,
+                                                               "GKE_ZONE": gke_zone},
+                                                       trigger_rule="all_done")
     delete_sn_additional_pool_task.set_upstream(join_geometries_tasks)
 
     # TASK #11. generate_layers
-    delete_mn_additional_pool_task = bash_operator.BashOperator(task_id="delete-mn-additional-pool",
-                                                                bash_command=delete_additional_pool_cmd,
-                                                                params={"POOL_NAME": addt_mn_gke_pool,
-                                                                        "GKE_CLUSTER_NAME": gke_main_cluster_name,
-                                                                        "GKE_ZONE": gke_zone},
-                                                                trigger_rule="all_done")
+    delete_mn_additional_pool_task = bash.BashOperator(task_id="delete-mn-additional-pool",
+                                                       bash_command=delete_additional_pool_cmd,
+                                                       params={"POOL_NAME": addt_mn_gke_pool,
+                                                               "GKE_CLUSTER_NAME": gke_main_cluster_name,
+                                                               "GKE_ZONE": gke_zone},
+                                                       trigger_rule="all_done")
     delete_mn_additional_pool_task.set_upstream(delete_sn_additional_pool_task)
 
     # Graph building
