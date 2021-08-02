@@ -7,3 +7,4 @@ sklearn
 staticmap
 pandas
 pandas_gbq
+geohash
