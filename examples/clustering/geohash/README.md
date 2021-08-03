@@ -76,3 +76,35 @@ SELECT
   COUNT(term) OVER(partition by geohash) as terms_in_cell
 FROM `gcp-pdp-osm-dev.geohash_v1.level_7_terms`
 ```
+
+
+## Calculate TF-IDF vectors 
+
+```
+WITH tf AS (SELECT geohash, term, ANY_VALUE(term_count)/ANY_VALUE(terms_in_cell) as tf
+FROM `gcp-pdp-osm-dev.geohash_v1.level_7_terms_counts`
+GROUP BY geohash, term)
+, term_in_cells AS (
+  SELECT term, COUNT(DISTINCT geohash) in_cells
+  FROM `gcp-pdp-osm-dev.geohash_v1.level_7_terms`
+  GROUP BY 1
+)
+, total_cells AS (
+  SELECT COUNT(DISTINCT geohash) total_cells
+  FROM `gcp-pdp-osm-dev.geohash_v1.level_7_terms`
+)
+, idf AS (
+  SELECT term, LOG(total_cells.total_cells/in_cells) idf
+  FROM term_in_cells
+  CROSS JOIN total_cells
+)
+SELECT
+    geohash,
+    term,
+    tf.tf * idf.idf tfidf,
+CONCAT(term, ': ', CAST(tf.tf * idf.idf AS STRING)) as term_and_tfidf
+FROM tf
+JOIN idf
+USING(term)
+ORDER BY geohash, tfidf DESC
+```
