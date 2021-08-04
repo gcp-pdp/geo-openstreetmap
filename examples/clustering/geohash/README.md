@@ -55,15 +55,15 @@ Start with
 `gcp-pdp-osm-dev.geohash_v1.objects_partitioned`
 
 Prepare:
-`gcp-pdp-osm-dev:geohash.level_7_terms`
-- geo_id
+`gcp-pdp-osm-dev:geohash_v1.level_7_terms`
+- geohash
 - term
 
 Script `./count_terms.py` - generates bq commands to prepare `level_7_terms` data.
 
 And
-`gcp-pdp-osm-dev:geohash.level_7_terms_counts`
-- geo_id
+`gcp-pdp-osm-dev:geohash_v1.level_7_terms_counts`
+- geohash
 - term
 - term_count
 - terms_in_cell
@@ -79,6 +79,8 @@ FROM `gcp-pdp-osm-dev.geohash_v1.level_7_terms`
 
 
 ## Calculate TF-IDF vectors 
+
+write result to `gcp-pdp-osm-dev:geohash_v1.level_7_vectors_tfidf_raw`
 
 ```
 WITH tf AS (SELECT geohash, term, ANY_VALUE(term_count)/ANY_VALUE(terms_in_cell) as tf
