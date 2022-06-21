@@ -269,6 +269,7 @@ with airflow.DAG(
             bql=join_geometries_query,
             destination_dataset_table=destination_table,
             write_disposition='WRITE_TRUNCATE',
+            cluster_fields=['geometry'],
             use_legacy_sql=False
         )
         join_geometries_tasks.append(join_geometries_task)
